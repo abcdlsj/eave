@@ -13,6 +13,8 @@ final class SignalHub {
 
     /// Bundle IDs automatically discovered in Eave's hidden/always-hidden menu bar sections.
     private(set) var discoveredHiddenBundleIDs: Set<String> = []
+    /// Live Dock unread badge labels keyed by bundle identifier (used to decorate Notch Bar icons).
+    private(set) var activeBadgesByBundleID: [String: String] = [:]
 
     init(settings: EaveSettings, stateMachine: NotchStateMachine) {
         self.settings = settings
@@ -124,6 +126,8 @@ final class SignalHub {
         _ diff: DockBadgeDiffEngine.DiffResult,
         currentSnapshots: [String: DockBadgeSnapshot]
     ) {
+        activeBadgesByBundleID = currentSnapshots.mapValues(\.badge)
+
         for clearedID in diff.clearedBundleIDs {
             stateMachine.removeAmbient(id: "dock.\(clearedID)")
         }

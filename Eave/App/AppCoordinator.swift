@@ -101,12 +101,15 @@ final class AppCoordinator {
     func openSettingsWindow() {
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 470),
-                styleMask: [.titled, .closable, .miniaturizable],
+                contentRect: NSRect(x: 0, y: 0, width: 680, height: 500),
+                styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
             window.title = "Eave Settings"
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
             window.center()
             window.contentView = NSHostingView(rootView: SettingsView(coordinator: self))
@@ -165,6 +168,7 @@ final class AppCoordinator {
                 stateMachine: self.notchStateMachine,
                 geometryProvider: { self.notchPanelController?.geometry ?? NotchGeometryResolver.currentGeometry() },
                 capturedItemsProvider: { self.capturedItems },
+                activeBadgesProvider: { self.signalHub.activeBadgesByBundleID },
                 isScanningProvider: { self.isScanningBarItems },
                 onSelectBarItem: { item in
                     self.notchStateMachine.closeBar()

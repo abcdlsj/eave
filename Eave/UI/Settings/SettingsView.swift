@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Main macOS Settings window for Eave covering General, Notch, Shortcuts, Permissions, and NotchBridge.
+/// Modern macOS System Settings–inspired sidebar interface for Eave.
 struct SettingsView: View {
     let coordinator: AppCoordinator
 
@@ -21,35 +21,126 @@ struct SettingsView: View {
             case .general: "slider.horizontal.3"
             case .notch: "macbook"
             case .shortcuts: "command"
-            case .permissions: "lock.shield"
-            case .bridge: "bolt.horizontal"
+            case .permissions: "lock.shield.fill"
+            case .bridge: "bolt.horizontal.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .general: Color(red: 0.36, green: 0.56, blue: 0.98)
+            case .notch: Color(red: 0.58, green: 0.42, blue: 0.98)
+            case .shortcuts: Color(red: 0.96, green: 0.54, blue: 0.24)
+            case .permissions: Color(red: 0.24, green: 0.78, blue: 0.46)
+            case .bridge: Color(red: 0.16, green: 0.72, blue: 0.88)
             }
         }
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            GeneralSettingsTab(coordinator: coordinator)
-                .tabItem { Label(SettingsTab.general.rawValue, systemImage: SettingsTab.general.symbol) }
-                .tag(SettingsTab.general)
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 184)
+                .background(.ultraThinMaterial)
 
-            NotchSettingsTab(coordinator: coordinator)
-                .tabItem { Label(SettingsTab.notch.rawValue, systemImage: SettingsTab.notch.symbol) }
-                .tag(SettingsTab.notch)
+            Divider()
 
-            ShortcutsSettingsTab(coordinator: coordinator)
-                .tabItem { Label(SettingsTab.shortcuts.rawValue, systemImage: SettingsTab.shortcuts.symbol) }
-                .tag(SettingsTab.shortcuts)
-
-            PermissionsSettingsTab(coordinator: coordinator)
-                .tabItem { Label(SettingsTab.permissions.rawValue, systemImage: SettingsTab.permissions.symbol) }
-                .tag(SettingsTab.permissions)
-
-            BridgeSettingsTab(coordinator: coordinator)
-                .tabItem { Label(SettingsTab.bridge.rawValue, systemImage: SettingsTab.bridge.symbol) }
-                .tag(SettingsTab.bridge)
+            detailPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 560, height: 470)
+        .frame(width: 680, height: 500)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Brand header with minimalist Eave app icon
+            HStack(spacing: 10) {
+                if let appIcon = NSApp.applicationIconImage {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Eave")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("v0.1.0")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 36)
+            .padding(.bottom, 14)
+
+            ForEach(SettingsTab.allCases) { tab in
+                sidebarRow(tab)
+            }
+
+            Spacer()
+
+            // Quick status pill at sidebar bottom
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(coordinator.permissions.hasAccessibility ? Color.green : Color.orange)
+                    .frame(width: 6, height: 6)
+                Text(coordinator.permissions.hasAccessibility ? "Full Access" : "Basic Mode")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
+        }
+    }
+
+    private func sidebarRow(_ tab: SettingsTab) -> some View {
+        let isSelected = selectedTab == tab
+        return Button {
+            selectedTab = tab
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(tab.tint.gradient)
+                        .frame(width: 22, height: 22)
+                    Image(systemName: tab.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+
+                Text(tab.rawValue)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.primary.opacity(0.09) : Color.clear)
+            )
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var detailPane: some View {
+        switch selectedTab {
+        case .general:
+            GeneralSettingsTab(coordinator: coordinator)
+        case .notch:
+            NotchSettingsTab(coordinator: coordinator)
+        case .shortcuts:
+            ShortcutsSettingsTab(coordinator: coordinator)
+        case .permissions:
+            PermissionsSettingsTab(coordinator: coordinator)
+        case .bridge:
+            BridgeSettingsTab(coordinator: coordinator)
+        }
     }
 }
 
@@ -91,7 +182,8 @@ private struct GeneralSettingsTab: View {
                         Slider(value: $settings.rehideDelaySeconds, in: 3...20, step: 1)
                         Text("\(Int(settings.rehideDelaySeconds))s")
                             .monospacedDigit()
-                            .frame(width: 32, alignment: .trailing)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, alignment: .trailing)
                     }
                 }
 
@@ -100,12 +192,13 @@ private struct GeneralSettingsTab: View {
                 Toggle("Hover over right menu bar to expand", isOn: $settings.expandOnMenuBarHover)
             }
 
-            Section("Menu Bar Spacing (System-Wide)") {
+            Section("Menu Bar Spacing") {
                 HStack {
                     Text("Icon spacing")
                     Slider(value: $spacingValue, in: 4...20, step: 1)
                     Text("\(Int(spacingValue))pt")
                         .monospacedDigit()
+                        .foregroundStyle(.secondary)
                         .frame(width: 36, alignment: .trailing)
                 }
 
@@ -114,6 +207,7 @@ private struct GeneralSettingsTab: View {
                     Slider(value: $paddingValue, in: 2...16, step: 1)
                     Text("\(Int(paddingValue))pt")
                         .monospacedDigit()
+                        .foregroundStyle(.secondary)
                         .frame(width: 36, alignment: .trailing)
                 }
 
@@ -124,11 +218,16 @@ private struct GeneralSettingsTab: View {
                             selectionPadding: Int(paddingValue)
                         )
                     }
-                    Button("Reset to System Default") {
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button("Reset Default") {
                         coordinator.spacingManager.resetToSystemDefault()
                         spacingValue = 10
                         paddingValue = 8
                     }
+                    .controlSize(.small)
+
                     Spacer()
                 }
                 Text("Apps apply updated spacing after relaunch or next login.")
@@ -157,35 +256,46 @@ private struct NotchSettingsTab: View {
         self._settings = Bindable(coordinator.settings)
     }
 
+    private var runningRegularApps: [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }
+            .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
+    }
+
     var body: some View {
         Form {
             Section("Notch Presentation") {
                 Toggle("Peek hidden app notifications from Notch", isOn: $settings.enableNotchPeek)
-                Toggle("Show ambient status dots on Notch edge", isOn: $settings.enableAmbientIndicators)
+                Toggle("Show ambient status wings on Notch", isOn: $settings.enableAmbientIndicators)
                     .onChange(of: settings.enableAmbientIndicators) { _, _ in
                         coordinator.signalHub.syncSettings()
                     }
-                Toggle("Watch hidden menu-bar-only app status changes (AX)", isOn: $settings.enableMenuBarAXWatcher)
+                Toggle("Watch hidden menu-bar-only app status changes", isOn: $settings.enableMenuBarAXWatcher)
                     .onChange(of: settings.enableMenuBarAXWatcher) { _, _ in
                         coordinator.signalHub.syncSettings()
                     }
-                Toggle("Use live menu bar icon capture in Notch Bar", isOn: $settings.enableLiveIconCapture)
+                Toggle("Use raw live menu bar pixel capture (off = crisp App Icons)", isOn: $settings.enableLiveIconCapture)
 
                 HStack {
                     Text("Peek duration")
                     Slider(value: $settings.peekDurationSeconds, in: 2...10, step: 0.5)
                     Text(String(format: "%.1fs", settings.peekDurationSeconds))
                         .monospacedDigit()
+                        .foregroundStyle(.secondary)
                         .frame(width: 40, alignment: .trailing)
                 }
 
                 HStack(spacing: 10) {
-                    Button("Send Test Peek") {
+                    Button("Preview Notch Peek") {
                         coordinator.signalHub.sendTestPeek()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
                     Button("Toggle Notch Bar") {
                         coordinator.toggleNotchBar()
                     }
+                    .controlSize(.small)
                 }
             }
 
@@ -193,7 +303,23 @@ private struct NotchSettingsTab: View {
                 Toggle("Automatically watch apps hidden under Eave", isOn: $settings.watchHiddenAppsAutomatically)
 
                 HStack {
-                    TextField("Add bundle ID (e.g. com.tinyspeck.slackmacgap)", text: $newBundleID)
+                    Menu {
+                        ForEach(runningRegularApps, id: \.processIdentifier) { app in
+                            if let id = app.bundleIdentifier {
+                                Button(app.localizedName ?? id) {
+                                    settings.addWatchedBundleID(id)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Add Running App", systemImage: "plus.app")
+                    }
+                    .menuStyle(.borderedButton)
+                    .fixedSize()
+
+                    TextField("or bundle ID...", text: $newBundleID)
+                        .textFieldStyle(.roundedBorder)
+
                     Button("Add") {
                         settings.addWatchedBundleID(newBundleID)
                         newBundleID = ""
@@ -203,27 +329,58 @@ private struct NotchSettingsTab: View {
 
                 if !settings.watchedBundleIDs.isEmpty {
                     ForEach(settings.watchedBundleIDs, id: \.self) { bundleID in
-                        HStack {
-                            Text(bundleID)
-                                .font(.system(.body, design: .monospaced))
-                            Spacer()
-                            Button(role: .destructive) {
-                                settings.removeWatchedBundleID(bundleID)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        watchedAppRow(bundleID: bundleID)
                     }
                 }
 
                 let autoCount = coordinator.signalHub.discoveredHiddenBundleIDs.count
-                Text("Currently tracking \(autoCount) auto-discovered hidden app(s).")
+                Text("Tracking \(autoCount) auto-discovered hidden app(s) + \(settings.watchedBundleIDs.count) pinned.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func watchedAppRow(bundleID: String) -> some View {
+        let resolved = AppIconService.shared.resolve(
+            bundleIdentifier: bundleID,
+            fallbackSymbol: "app.fill",
+            fallbackAccentHex: nil
+        )
+        let appName = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+            .map { $0.deletingPathExtension().lastPathComponent } ?? bundleID
+
+        return HStack(spacing: 10) {
+            if let img = resolved.image {
+                Image(nsImage: img)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 22, height: 22)
+            } else {
+                Image(systemName: "app.fill")
+                    .frame(width: 22, height: 22)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(appName)
+                    .font(.system(size: 12.5, weight: .medium))
+                Text(bundleID)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button(role: .destructive) {
+                settings.removeWatchedBundleID(bundleID)
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
@@ -277,7 +434,7 @@ private struct PermissionsSettingsTab: View {
                 permissionRow(
                     title: "Screen Recording (Optional)",
                     granted: coordinator.permissions.hasScreenRecording,
-                    description: "Captures on-demand single frames of hidden menu bar icons inside Notch Bar. Without it, Eave gracefully displays app icons instead.",
+                    description: "Only needed if you opt into raw pixel menu bar captures. By default, Eave renders crisp native App Icons with zero screen capture.",
                     onRequest: { coordinator.permissions.requestScreenRecordingPrompt() },
                     onOpenSettings: { coordinator.permissions.openScreenRecordingSettings() }
                 )
@@ -328,7 +485,10 @@ private struct PermissionsSettingsTab: View {
             if !granted {
                 HStack(spacing: 8) {
                     Button("Request Access", action: onRequest)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                     Button("Open System Settings", action: onOpenSettings)
+                        .controlSize(.small)
                 }
             }
         }
@@ -364,9 +524,9 @@ private struct BridgeSettingsTab: View {
                     Text(sampleURL)
                         .font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
-                        .padding(8)
+                        .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -385,18 +545,22 @@ private struct BridgeSettingsTab: View {
                             coordinator.handleIncomingURL(url)
                         }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
 
-                    Button("Test Ambient Dot") {
+                    Button("Test Ambient Wing") {
                         if let url = URL(string: "eave://notify?id=demo-ambient&mode=ambient&title=Agent+Running&badge=1&accent=38BDF8") {
                             coordinator.handleIncomingURL(url)
                         }
                     }
+                    .controlSize(.small)
 
                     Button("Clear Demo") {
                         if let url = URL(string: "eave://clear?id=demo-ambient") {
                             coordinator.handleIncomingURL(url)
                         }
                     }
+                    .controlSize(.small)
                 }
             }
         }

@@ -26,6 +26,7 @@
 		66DF7BB162833938A8B03784 /* MenuBarEventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */; };
 		686F5EFC36DB1D35358AE749 /* MenuBarImageCapturer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3687B5BF8D5564CAFE0C693B /* MenuBarImageCapturer.swift */; };
 		92A5A91616C1A1784F2B7B39 /* NotchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE533D6DEB6C9E120B0F643E /* NotchModels.swift */; };
+		9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */; };
 		9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65C078762E103E936EA304CE /* EaveApp.swift */; };
 		A4E72636C8ED7C8CBAE05266 /* NotchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52535BBF6DEA02E91B600F80 /* NotchBarView.swift */; };
 		A59B7A8A2DA83AB4D316D741 /* DockBadgeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */; };
@@ -68,6 +69,7 @@
 		7BFF31D6ECADB9071B56A235 /* MenuBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarManager.swift; sourceTree = "<group>"; };
 		8D9896D4C9DB2E80CB240563 /* EaveSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EaveSettings.swift; sourceTree = "<group>"; };
 		8F47743A732D02C813720F31 /* NotchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPanelController.swift; sourceTree = "<group>"; };
+		8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconService.swift; sourceTree = "<group>"; };
 		A798A5F6CCAB8AA615D646CF /* MenuBarModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarModels.swift; sourceTree = "<group>"; };
 		A8A3D16434A76D2B76DC175B /* Eave.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Eave.entitlements; sourceTree = "<group>"; };
 		B7D1C554AFBD27B40EB58ED7 /* EaveTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EaveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -168,6 +170,14 @@
 			path = Core;
 			sourceTree = "<group>";
 		};
+		6E2CD31744473873BC6B5CCE /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		84FA59B0E6444F2F743B2F32 = {
 			isa = PBXGroup;
 			children = (
@@ -193,6 +203,7 @@
 				FBA689782C05310327468AC8 /* Notch */,
 				561B2CED571AAC2EB5B72083 /* Search */,
 				0FB9E1CDC44822559994EF39 /* Settings */,
+				6E2CD31744473873BC6B5CCE /* Shared */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -348,6 +359,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3E955249D06DE4A9F0E08357 /* AppCoordinator.swift in Sources */,
+				9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */,
 				A59B7A8A2DA83AB4D316D741 /* DockBadgeMonitor.swift in Sources */,
 				9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */,
 				407C6EF91C9BDB825EAE7BC4 /* EaveSettings.swift in Sources */,

@@ -2,7 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Key-capable floating search panel (Spotlight-style) for quick keyboard access to any menu bar item.
+/// Key-capable floating search panel (Raycast / Spotlight style) for instant keyboard access to any menu bar item.
 final class MenuBarSearchWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -59,7 +59,7 @@ final class MenuBarSearchController {
         isVisible = true
 
         if panel == nil {
-            let rect = NSRect(x: 0, y: 0, width: 480, height: 340)
+            let rect = NSRect(x: 0, y: 0, width: 520, height: 380)
             let window = MenuBarSearchWindow(contentRect: rect)
             let view = MenuBarSearchView(controller: self)
             window.contentView = NSHostingView(rootView: view)
@@ -68,7 +68,7 @@ final class MenuBarSearchController {
 
         if let panel, let screen = NotchGeometryResolver.preferredScreen() ?? NSScreen.main {
             let x = screen.frame.midX - panel.frame.width / 2
-            let y = screen.frame.maxY - panel.frame.height - 140
+            let y = screen.frame.maxY - panel.frame.height - 150
             panel.setFrameOrigin(NSPoint(x: x, y: y))
             panel.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -137,14 +137,15 @@ struct MenuBarSearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            // Search input header
+            HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
 
                 TextField("Search menu bar items...", text: $controller.query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16))
+                    .font(.system(size: 16.5, weight: .regular))
                     .focused($isFieldFocused)
                     .onSubmit {
                         controller.selectCurrent()
@@ -155,85 +156,117 @@ struct MenuBarSearchView: View {
                         controller.query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 15)
 
             Divider()
+                .opacity(0.6)
 
+            // Results list
             let items = controller.filteredItems
             if items.isEmpty {
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
+                    Image(systemName: "rectangle.topthird.inset.filled")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.tertiary)
                     Text("No matching menu bar items")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13.5, weight: .medium))
                         .foregroundStyle(.secondary)
-                    Text("Make sure Accessibility permission is enabled for full discovery.")
-                        .font(.system(size: 11))
+                    Text("Grant Accessibility permission in Settings for complete item discovery.")
+                        .font(.system(size: 11.5))
                         .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 2) {
+                        LazyVStack(spacing: 3) {
                             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                                searchRow(item: item, isSelected: index == controller.selectedIndex)
-                                    .id(index)
-                                    .onTapGesture {
-                                        controller.select(item.info)
-                                    }
+                                SearchItemRow(
+                                    item: item,
+                                    isSelected: index == controller.selectedIndex
+                                )
+                                .id(index)
+                                .onTapGesture {
+                                    controller.select(item.info)
+                                }
                             }
                         }
-                        .padding(8)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
                     }
                     .onChange(of: controller.selectedIndex) { _, newValue in
-                        proxy.scrollTo(newValue, anchor: .center)
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            proxy.scrollTo(newValue, anchor: .center)
+                        }
                     }
                 }
             }
 
             Divider()
+                .opacity(0.6)
 
-            HStack {
-                Text("↑↓ Navigate   ↩ Trigger   ⎋ Close")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+            // Footer with tactile keycaps
+            HStack(spacing: 12) {
+                keyHint("↑↓", label: "Navigate")
+                keyHint("↩", label: "Open")
+                keyHint("⎋", label: "Close")
                 Spacer()
                 Text("\(items.count) items")
-                    .font(.system(size: 10))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.tertiary)
+                    .monospacedDigit()
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
         }
-        .frame(width: 480, height: 340)
-        .eaveGlassSurface(cornerRadius: 16)
+        .frame(width: 520, height: 380)
+        .eaveGlassSurface(cornerRadius: 20)
         .onAppear {
             isFieldFocused = true
         }
     }
 
-    private func searchRow(item: CapturedMenuBarItem, isSelected: Bool) -> some View {
-        HStack(spacing: 10) {
-            if let image = item.image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 22, height: 22)
-            } else {
-                Image(systemName: "menubar.rectangle")
-                    .frame(width: 22, height: 22)
-                    .foregroundStyle(.secondary)
-            }
+    private func keyHint(_ key: String, label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            Text(label)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
 
-            VStack(alignment: .leading, spacing: 1) {
+private struct SearchItemRow: View {
+    let item: CapturedMenuBarItem
+    let isSelected: Bool
+
+    private var resolved: AppIconService.ResolvedIcon {
+        AppIconService.shared.resolve(for: item.info)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            rowIcon
+                .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 1.5) {
                 Text(item.info.appName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
+
                 if !item.info.title.isEmpty && item.info.title != item.info.appName {
                     Text(item.info.title)
                         .font(.system(size: 11))
@@ -245,18 +278,49 @@ struct MenuBarSearchView: View {
             Spacer()
 
             Text(item.info.section.displayName)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(.primary.opacity(0.07), in: Capsule())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(item.info.section == .visible ? .secondary : resolved.accentColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(
+                            item.info.section == .visible
+                                ? Color.primary.opacity(0.06)
+                                : resolved.accentColor.opacity(0.14)
+                        )
+                )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.clear)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(isSelected ? Color.accentColor.opacity(0.32) : Color.clear, lineWidth: 0.75)
+                )
         )
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var rowIcon: some View {
+        if let appIcon = resolved.image {
+            Image(nsImage: appIcon)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .aspectRatio(contentMode: .fit)
+                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(resolved.accentColor.opacity(0.16))
+                Image(systemName: resolved.symbolName ?? "menubar.rectangle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(resolved.accentColor)
+            }
+        }
     }
 }

@@ -30,8 +30,8 @@ final class NotchPanel: NSPanel {
 /// Manages the lifecycle, screen geometry, hit-test pass-through, and SwiftUI hosting of the Notch panel.
 @MainActor
 final class NotchPanelController {
-    private static let canvasWidth: CGFloat = 560
-    private static let canvasHeight: CGFloat = 230
+    private static let canvasWidth: CGFloat = 600
+    private static let canvasHeight: CGFloat = 240
 
     private let stateMachine: NotchStateMachine
     private let panel: NotchPanel
@@ -141,22 +141,22 @@ final class NotchPanelController {
         case .idle:
             return .zero
         case .ambient:
-            let w = baseW + 64
+            let w = baseW + 76
             let h = baseH + 4
             return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
         case .peek(_, let expanded):
             if expanded {
-                let w: CGFloat = max(baseW + 170, 360)
-                let h: CGFloat = baseH + 92
+                let w: CGFloat = max(baseW + 200, 396)
+                let h: CGFloat = baseH + 96
                 return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
             } else {
-                let w: CGFloat = baseW + 128
+                let w: CGFloat = baseW + 132
                 let h: CGFloat = baseH + 6
                 return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
             }
         case .bar:
-            let w: CGFloat = min(Self.canvasWidth - 20, 500)
-            let h: CGFloat = baseH + 148
+            let w: CGFloat = 520
+            let h: CGFloat = baseH + 116
             return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
         }
     }

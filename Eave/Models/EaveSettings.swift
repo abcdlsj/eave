@@ -126,7 +126,8 @@ final class EaveSettings {
         self.enableNotchBridge = defaults.object(forKey: Key.enableNotchBridge) as? Bool ?? true
         self.enableMenuBarAXWatcher = defaults.object(forKey: Key.enableMenuBarAXWatcher) as? Bool ?? true
 
-        self.enableLiveIconCapture = defaults.object(forKey: Key.enableLiveIconCapture) as? Bool ?? true
+        // Default to crisp high-resolution native App Icons rather than raw menu bar pixel captures.
+        self.enableLiveIconCapture = defaults.object(forKey: Key.enableLiveIconCapture) as? Bool ?? false
 
         for action in HotKeyAction.allCases {
             if let data = defaults.data(forKey: Key.hotKeyPrefix + action.rawValue),
