@@ -86,11 +86,47 @@ final class AppIconService {
         }
 
         guard let icon = loaded else { return nil }
-        // Request crisp retina 128pt representation so downscaling to 32-44pt stays razor-sharp.
-        let sized = icon.copy() as? NSImage ?? icon
-        sized.size = NSSize(width: 128, height: 128)
-        iconCache[cacheKey] = sized
-        return sized
+        // Pre-rasterize once into a crisp 36pt@2x (72px) bitmap so ScrollView and hover never pay
+        // runtime Lanczos downsampling costs on 1024px .icns representations.
+        let rasterized = Self.rasterize(icon, pointSize: 36, scale: 2)
+        iconCache[cacheKey] = rasterized
+        return rasterized
+    }
+
+    private static func rasterize(_ image: NSImage, pointSize: CGFloat, scale: CGFloat) -> NSImage {
+        let px = Int(pointSize * scale)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: px,
+            pixelsHigh: px,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return image
+        }
+        rep.size = NSSize(width: pointSize, height: pointSize)
+
+        NSGraphicsContext.saveGraphicsState()
+        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = ctx
+            ctx.imageInterpolation = .high
+            image.draw(
+                in: NSRect(x: 0, y: 0, width: pointSize, height: pointSize),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1.0
+            )
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        let out = NSImage(size: NSSize(width: pointSize, height: pointSize))
+        out.addRepresentation(rep)
+        return out
     }
 
     // MARK: - Fast Dominant Color Extraction

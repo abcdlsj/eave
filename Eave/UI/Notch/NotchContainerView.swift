@@ -55,8 +55,14 @@ struct NotchContainerView: View {
                 width: expanded ? max(baseW + 150, 336) : baseW + 104,
                 alignment: .top
             )
-            .background(notchShell(topRadius: expanded ? 12 : 9, bottomRadius: expanded ? 18 : 13))
-            .shadow(color: .black.opacity(expanded ? 0.34 : 0.16), radius: expanded ? 14 : 6, y: expanded ? 6 : 2)
+            .background(
+                notchShell(
+                    topRadius: expanded ? 12 : 9,
+                    bottomRadius: expanded ? 18 : 13,
+                    shadowRadius: expanded ? 12 : 5,
+                    shadowOpacity: expanded ? 0.30 : 0.14
+                )
+            )
 
         case .bar:
             NotchBarView(
@@ -72,8 +78,11 @@ struct NotchContainerView: View {
                 onClose: { stateMachine.closeBar() }
             )
             .frame(width: 520, alignment: .top)
-            .background(notchShell(topRadius: 14, bottomRadius: 22))
-            .shadow(color: .black.opacity(0.38), radius: 16, y: 8)
+            .background(
+                // Attach shadow strictly to the static obsidian shell, never to the scrolling NotchBarView,
+                // so horizontal scrolling and icon hover run at native 120fps without offscreen shadow passes.
+                notchShell(topRadius: 14, bottomRadius: 22, shadowRadius: 14, shadowOpacity: 0.34)
+            )
         }
     }
 
@@ -113,11 +122,21 @@ struct NotchContainerView: View {
     /// Deep obsidian shell whose top edge melts seamlessly into the hardware notch bezel,
     /// accented only along the lower perimeter by an ultra-subtle fading specular rim.
     @ViewBuilder
-    private func notchShell(topRadius: CGFloat, bottomRadius: CGFloat) -> some View {
+    private func notchShell(
+        topRadius: CGFloat,
+        bottomRadius: CGFloat,
+        shadowRadius: CGFloat = 0,
+        shadowOpacity: Double = 0
+    ) -> some View {
         if geometry.isPhysicalNotch {
             ZStack {
                 NotchShape(topCornerRadius: topRadius, bottomCornerRadius: bottomRadius)
                     .fill(Color.black)
+                    .shadow(
+                        color: .black.opacity(shadowOpacity),
+                        radius: shadowRadius,
+                        y: shadowRadius > 0 ? 6 : 0
+                    )
 
                 // Subtle bottom-only glass sheen (zero white line along the top bezel seam).
                 NotchBottomRimShape(topCornerRadius: topRadius, bottomCornerRadius: bottomRadius)
@@ -133,6 +152,11 @@ struct NotchContainerView: View {
         } else {
             RoundedRectangle(cornerRadius: bottomRadius, style: .continuous)
                 .fill(Color(red: 0.05, green: 0.05, blue: 0.06).opacity(0.95))
+                .shadow(
+                    color: .black.opacity(shadowOpacity),
+                    radius: shadowRadius,
+                    y: shadowRadius > 0 ? 6 : 0
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: bottomRadius, style: .continuous)
                         .strokeBorder(

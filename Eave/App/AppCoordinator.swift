@@ -29,6 +29,7 @@ final class AppCoordinator {
 
     private(set) var capturedItems: [CapturedMenuBarItem] = []
     private(set) var isScanningBarItems: Bool = false
+    private var lastScannedSignature: [String] = []
 
     init() {
         let settings = EaveSettings()
@@ -235,6 +236,12 @@ final class AppCoordinator {
         }
         eventMonitor.onScrollCollapse = { [weak self] in
             guard let self else { return }
+            let loc = NSEvent.mouseLocation
+            // Do not hijack horizontal/vertical scrolling while the user is scrolling inside Notch Bar.
+            if self.notchStateMachine.isBarOpen,
+               self.notchPanelController?.isPointInsideActiveSurface(loc) == true {
+                return
+            }
             if self.notchStateMachine.isBarOpen {
                 self.notchStateMachine.closeBar()
             }
@@ -306,6 +313,8 @@ final class AppCoordinator {
     }
 
     private func performLightweightHiddenScan() {
+        // Never disrupt active Notch Bar scrolling/hovering with background cache replacements.
+        guard !notchStateMachine.isBarOpen else { return }
         let hiddenX = menuBarManager.hiddenSeparatorX
         let alwaysX = menuBarManager.alwaysHiddenSeparatorX
         let owned = menuBarManager.ownedWindowIDs
@@ -317,8 +326,12 @@ final class AppCoordinator {
                 excludingWindowIDs: owned
             )
             self.syncHiddenBundleIDs(from: scanned)
-            // Keep Notch Bar icon cache warm so pressing ⌥⌘N opens instantaneously with zero lag.
-            if !self.isScanningBarItems {
+
+            let signature = scanned.map { "\($0.id)|\($0.section.rawValue)|\($0.title)" }
+            guard signature != self.lastScannedSignature else { return }
+            self.lastScannedSignature = signature
+
+            if !self.isScanningBarItems && !self.notchStateMachine.isBarOpen {
                 self.capturedItems = await self.imageCapturer.captureItems(
                     scanned,
                     allowLiveCapture: self.settings.enableLiveIconCapture
