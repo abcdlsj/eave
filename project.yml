@@ -1,0 +1,69 @@
+name: Eave
+options:
+  bundleIdPrefix: com.abcdlsj
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+
+targets:
+  Eave:
+    type: application
+    platform: macOS
+    sources:
+      - path: Eave
+        excludes:
+          - "**/*.md"
+    resources:
+      - path: Eave/Resources/Assets.xcassets
+    info:
+      path: Eave/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Eave
+        CFBundleName: Eave
+        CFBundleIdentifier: com.abcdlsj.eave
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        LSUIElement: true
+        NSHumanReadableCopyright: "Copyright © 2026 abcdlsj"
+        NSPrincipalClass: NSApplication
+        CFBundleURLTypes:
+          - CFBundleURLName: com.abcdlsj.eave.bridge
+            CFBundleURLSchemes:
+              - eave
+    entitlements:
+      path: Eave/Resources/Eave.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abcdlsj.eave
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+
+  EaveTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: EaveTests
+    dependencies:
+      - target: Eave
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.abcdlsj.eave.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Eave.app/Contents/MacOS/Eave
+        BUNDLE_LOADER: $(TEST_HOST)
+        SWIFT_STRICT_CONCURRENCY: complete

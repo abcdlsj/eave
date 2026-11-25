@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Lightweight CLI bridge to send a Notch peek or ambient indicator to Eave.
+# Example:
+#   ./scripts/eave-notify --title "Build Done" --subtitle "eave 0.1" --badge "OK" --symbol "checkmark.circle.fill"
+
+TITLE=""
+SUBTITLE=""
+BADGE=""
+SYMBOL="bell.badge.fill"
+ACCENT=""
+DURATION="4.5"
+MODE="peek"
+ID=""
+BUNDLE_ID=""
+TARGET_URL=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --title) TITLE="$2"; shift 2 ;;
+    --subtitle) SUBTITLE="$2"; shift 2 ;;
+    --badge) BADGE="$2"; shift 2 ;;
+    --symbol) SYMBOL="$2"; shift 2 ;;
+    --accent) ACCENT="$2"; shift 2 ;;
+    --duration) DURATION="$2"; shift 2 ;;
+    --mode) MODE="$2"; shift 2 ;;
+    --id) ID="$2"; shift 2 ;;
+    --bundle-id) BUNDLE_ID="$2"; shift 2 ;;
+    --url) TARGET_URL="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: eave-notify --title <text> [--subtitle <text>] [--badge <text>] [--symbol <sf-symbol>] [--accent <#RRGGBB>] [--duration <sec>] [--mode peek|ambient|clear] [--id <key>] [--bundle-id <id>] [--url <url>]"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+QUERY=$(python3 - "$TITLE" "$SUBTITLE" "$BADGE" "$SYMBOL" "$ACCENT" "$DURATION" "$MODE" "$ID" "$BUNDLE_ID" "$TARGET_URL" <<'PY'
+import sys, urllib.parse
+keys = ["title", "subtitle", "badge", "symbol", "accent", "duration", "mode", "id", "bundleID", "url"]
+params = [(k, v) for k, v in zip(keys, sys.argv[1:]) if v]
+print(urllib.parse.urlencode(params, quote_via=urllib.parse.quote))
+PY
+)
+
+if [[ "$MODE" == "clear" ]]; then
+  open -g "eave://clear?${QUERY}"
+else
+  open -g "eave://notify?${QUERY}"
+fi
