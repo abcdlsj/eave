@@ -190,6 +190,15 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(prefix.map(\.appName), ["Slack"])
     }
 
+    @MainActor
+    func testControlCenterExclusionFilter() {
+        XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.controlcenter", ownerName: "Control Center"))
+        XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: nil, ownerName: "Control Center"))
+        XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.systemuiserver", ownerName: "SystemUIServer"))
+        XCTAssertFalse(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.tencent.xinWeChat", ownerName: "WeChat"))
+        XCTAssertFalse(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "io.tailscale.ipn.macsys", ownerName: "Tailscale"))
+    }
+
     // MARK: - EaveSettings Persistence Tests
 
     @MainActor

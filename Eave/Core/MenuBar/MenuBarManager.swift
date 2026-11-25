@@ -159,7 +159,11 @@ final class MenuBarManager: NSObject {
 
         hiddenSeparator = NSStatusBar.system.statusItem(withLength: Self.collapsedSeparatorLength)
         hiddenSeparator.autosaveName = "eave.control.hidden"
-        configureSeparatorButton(hiddenSeparator, symbol: "line.diagonal", tooltip: "Eave Hidden Section Divider (⌘-drag icons left to hide)")
+        configureSeparatorButton(
+            hiddenSeparator,
+            image: Self.makeDividerImage(style: .hairline),
+            tooltip: "Eave Hidden Section Divider (⌘-drag icons left to hide)"
+        )
 
         if settings.enableAlwaysHiddenSection {
             ensureAlwaysHiddenSeparator()
@@ -190,8 +194,50 @@ final class MenuBarManager: NSObject {
         guard alwaysHiddenSeparator == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: Self.collapsedSeparatorLength)
         item.autosaveName = "eave.control.alwaysHidden"
-        configureSeparatorButton(item, symbol: "ellipsis", tooltip: "Eave Always-Hidden Divider (⌘-drag icons left to keep hidden)")
+        configureSeparatorButton(
+            item,
+            image: Self.makeDividerImage(style: .doubleDot),
+            tooltip: "Eave Always-Hidden Divider (⌘-drag icons left to keep hidden)"
+        )
         alwaysHiddenSeparator = item
+    }
+
+    private enum DividerStyle {
+        case hairline
+        case doubleDot
+    }
+
+    /// Renders a crisp, minimalist template divider glyph harmonized with Eave's visual language.
+    private static func makeDividerImage(style: DividerStyle) -> NSImage {
+        let size = NSSize(width: 12, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor.black.setFill()
+            switch style {
+            case .hairline:
+                let barW: CGFloat = 1.6
+                let barH: CGFloat = 10.5
+                let barRect = NSRect(
+                    x: (rect.width - barW) / 2,
+                    y: (rect.height - barH) / 2,
+                    width: barW,
+                    height: barH
+                )
+                NSBezierPath(roundedRect: barRect, xRadius: barW / 2, yRadius: barW / 2).fill()
+
+            case .doubleDot:
+                let dot: CGFloat = 2.6
+                let gap: CGFloat = 3.2
+                let cx = (rect.width - dot) / 2
+                let cy = rect.height / 2
+                let topRect = NSRect(x: cx, y: cy + gap / 2, width: dot, height: dot)
+                let botRect = NSRect(x: cx, y: cy - gap / 2 - dot, width: dot, height: dot)
+                NSBezierPath(ovalIn: topRect).fill()
+                NSBezierPath(ovalIn: botRect).fill()
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     private func configureToggleButton() {
@@ -210,14 +256,11 @@ final class MenuBarManager: NSObject {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
-    private func configureSeparatorButton(_ item: NSStatusItem, symbol: String, tooltip: String) {
+    private func configureSeparatorButton(_ item: NSStatusItem, image: NSImage, tooltip: String) {
         guard let button = item.button else { return }
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Eave Divider")?
-            .withSymbolConfiguration(config)
-        image?.isTemplate = true
         button.image = image
-        button.alphaValue = 0.45
+        button.imagePosition = .imageOnly
+        button.alphaValue = 0.38
         button.toolTip = tooltip
         button.appearsDisabled = false
     }

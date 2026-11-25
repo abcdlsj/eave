@@ -126,7 +126,7 @@ struct NotchBarView: View {
                     ForEach(displayItems) { captured in
                         NotchBarIconTile(
                             captured: captured,
-                            badge: captured.info.bundleIdentifier.flatMap { activeBadges[$0] },
+                            badge: resolvedBadge(for: captured.info),
                             isHovered: hoveredItemID == captured.id,
                             onSelect: { onSelectItem(captured.info) }
                         )
@@ -162,6 +162,18 @@ struct NotchBarView: View {
 
     private func barControl(symbol: String, help: String, action: @escaping () -> Void) -> some View {
         NotchHeaderIconButton(symbol: symbol, helpText: help, action: action)
+    }
+
+    /// Prefers live Dock badge; falls back to compact numeric AX menu bar title (e.g. WeCom unread count).
+    private func resolvedBadge(for info: MenuBarItemInfo) -> String? {
+        if let bundleID = info.bundleIdentifier, let dockBadge = activeBadges[bundleID], !dockBadge.isEmpty {
+            return dockBadge
+        }
+        let title = info.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty, title.count <= 4, title.allSatisfy(\.isNumber) {
+            return title
+        }
+        return nil
     }
 }
 

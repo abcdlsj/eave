@@ -87,11 +87,29 @@ enum MenuBarSearchEngine {
 }
 
 /// Dual-track menu bar scanner:
-/// 1. Window Server status layer (`kCGWindowLayer == 25`) for exact pixel frames.
-/// 2. Accessibility (`AXExtrasMenuBar`) fallback for macOS 26 unified scene items.
+/// 1. Accessibility (`AXExtrasMenuBar`) primary discovery (reliable for third-party items on macOS 26 Tahoe).
+/// 2. Window Server status layer (`kCGWindowLayer == 25`) supplement when Accessibility is unavailable.
+/// Excludes Control Center / WindowServer internal system modules so Notch Bar stays focused on user apps.
 @MainActor
 final class MenuBarItemScanner {
     private static let statusItemWindowLayer = 25
+
+    /// System daemons whose internal menu bar modules should be excluded from Eave's Notch Bar & Search.
+    static func isExcludedSystemOwner(bundleIdentifier: String?, ownerName: String) -> Bool {
+        if let bundle = bundleIdentifier?.lowercased() {
+            if bundle == "com.apple.controlcenter"
+                || bundle == "com.apple.windowserver"
+                || bundle == "com.apple.systemuiserver"
+                || bundle == "com.apple.spotlight"
+                || bundle == "com.apple.siri" {
+                return true
+            }
+        }
+        let lowerOwner = ownerName.lowercased()
+        return lowerOwner == "control center"
+            || lowerOwner == "window server"
+            || lowerOwner == "systemuiserver"
+    }
 
     /// Scans current menu bar items and classifies them relative to Eave's separator boundaries.
     func scan(
@@ -102,7 +120,17 @@ final class MenuBarItemScanner {
         let primaryHeight = NotchGeometryResolver.currentGeometry().menuBarHeight
         let ownPID = ProcessInfo.processInfo.processIdentifier
 
-        var discovered = scanWindowList(
+        var discovered: [MenuBarItemInfo] = []
+
+        if AXIsProcessTrusted() {
+            discovered = scanAccessibilityExtras(
+                hiddenSeparatorX: hiddenSeparatorX,
+                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
+                ownPID: ownPID
+            )
+        }
+
+        let windowItems = scanWindowList(
             menuBarHeight: primaryHeight,
             hiddenSeparatorX: hiddenSeparatorX,
             alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
@@ -110,20 +138,12 @@ final class MenuBarItemScanner {
             ownPID: ownPID
         )
 
-        if AXIsProcessTrusted() {
-            let axItems = scanAccessibilityExtras(
-                hiddenSeparatorX: hiddenSeparatorX,
-                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
-                ownPID: ownPID
-            )
-            // Merge AX items that were omitted by CGWindowList (common on macOS 26 Tahoe).
-            for axItem in axItems {
-                let alreadyPresent = discovered.contains { existing in
-                    existing.pid == axItem.pid && abs(existing.frame.midX - axItem.frame.midX) < 12
-                }
-                if !alreadyPresent {
-                    discovered.append(axItem)
-                }
+        for winItem in windowItems {
+            let alreadyPresent = discovered.contains { existing in
+                existing.pid == winItem.pid && abs(existing.frame.midX - winItem.frame.midX) < 16
+            }
+            if !alreadyPresent {
+                discovered.append(winItem)
             }
         }
 
@@ -158,10 +178,11 @@ final class MenuBarItemScanner {
                 continue
             }
 
-            // Filter out invisible/zero-width helper windows and windows outside the top menu bar band.
+            // Filter out zero-origin ghost windows and windows outside the top menu bar band.
             guard bounds.width >= 4, bounds.width <= 320,
                   bounds.height >= 8, bounds.height <= maxBarY,
-                  bounds.minY >= -4, bounds.minY <= maxBarY else {
+                  bounds.minY >= -4, bounds.minY <= maxBarY,
+                  !(bounds.minX == 0 && bounds.minY == 0) else {
                 continue
             }
 
@@ -171,8 +192,7 @@ final class MenuBarItemScanner {
                 ?? "Unknown"
             let bundleID = app?.bundleIdentifier
 
-            // Skip Control Center internal invisible helper spacers.
-            if bundleID == "com.apple.WindowServer" || ownerName == "Window Server" {
+            if Self.isExcludedSystemOwner(bundleIdentifier: bundleID, ownerName: ownerName) {
                 continue
             }
 
@@ -214,6 +234,10 @@ final class MenuBarItemScanner {
         for app in NSWorkspace.shared.runningApplications {
             let pid = app.processIdentifier
             guard pid != ownPID, !app.isTerminated else { continue }
+            let appName = app.localizedName ?? app.bundleIdentifier ?? "App"
+            if Self.isExcludedSystemOwner(bundleIdentifier: app.bundleIdentifier, ownerName: appName) {
+                continue
+            }
 
             let appElement = AXUIElementCreateApplication(pid)
             var extrasRef: CFTypeRef?
@@ -229,7 +253,6 @@ final class MenuBarItemScanner {
                 continue
             }
 
-            let appName = app.localizedName ?? app.bundleIdentifier ?? "App"
             for (index, item) in children.enumerated() {
                 guard let frame = axFrame(of: item), frame.width >= 4 else { continue }
                 let title = axString(item, kAXTitleAttribute)
