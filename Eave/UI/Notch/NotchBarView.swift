@@ -9,6 +9,7 @@ struct NotchBarView: View {
     let onSelectItem: (MenuBarItemInfo) -> Void
     let onRefresh: () -> Void
     let onOpenSearch: () -> Void
+    let onOpenSettings: () -> Void
     let onClose: () -> Void
 
     @State private var hoveredItemID: String?
@@ -42,6 +43,9 @@ struct NotchBarView: View {
                     }
                     barHeaderButton(symbol: "arrow.clockwise", help: "Refresh Items") {
                         onRefresh()
+                    }
+                    barHeaderButton(symbol: "gearshape", help: "Eave Settings") {
+                        onOpenSettings()
                     }
                     barHeaderButton(symbol: "xmark", help: "Close Notch Bar") {
                         onClose()

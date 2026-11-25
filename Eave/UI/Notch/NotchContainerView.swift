@@ -10,6 +10,7 @@ struct NotchContainerView: View {
     let onSelectBarItem: (MenuBarItemInfo) -> Void
     let onRefreshBar: () -> Void
     let onOpenSearch: () -> Void
+    let onOpenSettings: () -> Void
     let onAlertAction: (NotchAlert) -> Void
     let onAmbientAction: (AmbientIndicator) -> Void
 
@@ -64,6 +65,7 @@ struct NotchContainerView: View {
                 onSelectItem: onSelectBarItem,
                 onRefresh: onRefreshBar,
                 onOpenSearch: onOpenSearch,
+                onOpenSettings: onOpenSettings,
                 onClose: { stateMachine.closeBar() }
             )
             .frame(width: 480, alignment: .top)

@@ -38,4 +38,9 @@ final class EaveAppDelegate: NSObject, NSApplicationDelegate {
             coordinator?.handleIncomingURL(url)
         }
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        coordinator?.openSettingsWindow()
+        return true
+    }
 }

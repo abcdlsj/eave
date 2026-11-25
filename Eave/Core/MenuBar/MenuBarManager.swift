@@ -131,14 +131,15 @@ final class MenuBarManager: NSObject {
     /// Window IDs owned by Eave's own control items so the scanner excludes them.
     var ownedWindowIDs: Set<CGWindowID> {
         var ids = Set<CGWindowID>()
-        if let num = toggleItem.button?.window?.windowNumber, num > 0 {
-            ids.insert(CGWindowID(num))
-        }
-        if let num = hiddenSeparator.button?.window?.windowNumber, num > 0 {
-            ids.insert(CGWindowID(num))
-        }
-        if let num = alwaysHiddenSeparator?.button?.window?.windowNumber, num > 0 {
-            ids.insert(CGWindowID(num))
+        let windows = [
+            toggleItem.button?.window,
+            hiddenSeparator.button?.window,
+            alwaysHiddenSeparator?.button?.window
+        ]
+        for window in windows {
+            if let num = window?.windowNumber, num > 0, let wid = CGWindowID(exactly: num) {
+                ids.insert(wid)
+            }
         }
         return ids
     }
@@ -146,7 +147,11 @@ final class MenuBarManager: NSObject {
     // MARK: - Setup
 
     private func setupStatusItems() {
-        // Order of creation establishes sensible initial left-to-right placement on first launch:
+        // Seed rightmost Preferred Positions on first launch so Eave stays visible
+        // beside Control Center even when the user's menu bar is already full.
+        seedInitialPreferredPositionsIfNeeded()
+
+        // Order of creation establishes sensible initial left-to-right placement:
         // [AlwaysHidden Separator] ... [Hidden Separator] ... [Toggle Anchor]
         toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         toggleItem.autosaveName = "eave.control.toggle"
@@ -161,6 +166,23 @@ final class MenuBarManager: NSObject {
         }
 
         applySeparatorLengths()
+    }
+
+    private func seedInitialPreferredPositionsIfNeeded() {
+        let defaults = UserDefaults.standard
+        let toggleKey = "NSStatusItem Preferred Position eave.control.toggle"
+        let hiddenKey = "NSStatusItem Preferred Position eave.control.hidden"
+        let alwaysKey = "NSStatusItem Preferred Position eave.control.alwaysHidden"
+
+        if defaults.object(forKey: toggleKey) == nil {
+            defaults.set(0.0, forKey: toggleKey)
+        }
+        if defaults.object(forKey: hiddenKey) == nil {
+            defaults.set(40.0, forKey: hiddenKey)
+        }
+        if defaults.object(forKey: alwaysKey) == nil {
+            defaults.set(80.0, forKey: alwaysKey)
+        }
     }
 
     private func ensureAlwaysHiddenSeparator() {

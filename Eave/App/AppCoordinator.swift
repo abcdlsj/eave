@@ -119,7 +119,22 @@ final class AppCoordinator {
 
     @discardableResult
     func handleIncomingURL(_ url: URL) -> Bool {
-        signalHub.bridge.handleIncomingURL(url)
+        if url.scheme?.lowercased() == "eave" {
+            switch url.host?.lowercased() {
+            case "settings":
+                openSettingsWindow()
+                return true
+            case "bar":
+                toggleNotchBar()
+                return true
+            case "search":
+                openSearch()
+                return true
+            default:
+                break
+            }
+        }
+        return signalHub.bridge.handleIncomingURL(url)
     }
 
     @discardableResult
@@ -165,6 +180,11 @@ final class AppCoordinator {
                 },
                 onOpenSearch: {
                     self.openSearch()
+                },
+                onOpenSettings: {
+                    self.notchStateMachine.closeBar()
+                    self.notchPanelController?.updateMouseInteractivity()
+                    self.openSettingsWindow()
                 },
                 onAlertAction: { alert in
                     self.signalHub.performPrimaryAction(for: alert)
