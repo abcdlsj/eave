@@ -35,11 +35,14 @@ struct NotchBarView: View {
         VStack(spacing: 0) {
             // Top wing bar flanking the physical camera housing cleanly.
             HStack(spacing: 0) {
-                // Left ear: minimalist label / active hover name.
+                // Left ear: minimalist Eave glyph / active hover name.
                 HStack(spacing: 6) {
-                    Image(systemName: "rectangle.topthird.inset.filled")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
+                    Image("MenuBarIcon")
+                        .renderingMode(.template)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 14, height: 14)
+                        .foregroundStyle(.white.opacity(0.72))
 
                     Text(headerTitle)
                         .font(.system(size: 11, weight: .medium))
