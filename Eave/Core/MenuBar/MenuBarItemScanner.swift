@@ -1,0 +1,287 @@
+import AppKit
+import ApplicationServices
+import CoreGraphics
+import Foundation
+
+/// Pure section classifier & fuzzy search engine (isolated for deterministic unit tests).
+enum MenuBarSearchEngine {
+    /// Classifies an item's X coordinate relative to Eave's separator positions.
+    static func classifySection(
+        itemMidX: CGFloat,
+        hiddenSeparatorX: CGFloat?,
+        alwaysHiddenSeparatorX: CGFloat?
+    ) -> MenuBarSection {
+        if let alwaysX = alwaysHiddenSeparatorX, itemMidX < alwaysX {
+            return .alwaysHidden
+        }
+        if let hiddenX = hiddenSeparatorX, itemMidX < hiddenX {
+            return .hidden
+        }
+        return .visible
+    }
+
+    /// Fuzzy-filters and ranks menu bar items by query (prefix > word-boundary > substring > subsequence).
+    static func filter(items: [MenuBarItemInfo], query: String) -> [MenuBarItemInfo] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return items.sorted { lhs, rhs in
+                if lhs.section != rhs.section {
+                    return sectionRank(lhs.section) < sectionRank(rhs.section)
+                }
+                return lhs.appName.localizedCaseInsensitiveCompare(rhs.appName) == .orderedAscending
+            }
+        }
+
+        let needle = trimmed.lowercased()
+        let scored: [(item: MenuBarItemInfo, score: Int)] = items.compactMap { item in
+            guard let score = matchScore(text: item.searchableText.lowercased(), needle: needle) else {
+                return nil
+            }
+            return (item, score)
+        }
+
+        return scored
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
+                return lhs.item.appName.localizedCaseInsensitiveCompare(rhs.item.appName) == .orderedAscending
+            }
+            .map(\.item)
+    }
+
+    private static func sectionRank(_ section: MenuBarSection) -> Int {
+        switch section {
+        case .hidden: 0
+        case .alwaysHidden: 1
+        case .visible: 2
+        }
+    }
+
+    static func matchScore(text: String, needle: String) -> Int? {
+        if text == needle { return 1000 }
+        if text.hasPrefix(needle) { return 800 }
+        if let range = text.range(of: needle) {
+            let offset = text.distance(from: text.startIndex, to: range.lowerBound)
+            let isWordStart = offset == 0 || text[text.index(before: range.lowerBound)] == " "
+            return (isWordStart ? 650 : 500) - min(offset, 200)
+        }
+
+        // Subsequence fuzzy match (e.g. "wc" -> "WeChat").
+        var textIdx = text.startIndex
+        var score = 200
+        var consecutive = 0
+        for ch in needle {
+            guard let found = text[textIdx...].firstIndex(of: ch) else {
+                return nil
+            }
+            if found == textIdx {
+                consecutive += 1
+                score += 20 * consecutive
+            } else {
+                consecutive = 0
+                score -= 2
+            }
+            textIdx = text.index(after: found)
+        }
+        return max(score, 10)
+    }
+}
+
+/// Dual-track menu bar scanner:
+/// 1. Window Server status layer (`kCGWindowLayer == 25`) for exact pixel frames.
+/// 2. Accessibility (`AXExtrasMenuBar`) fallback for macOS 26 unified scene items.
+@MainActor
+final class MenuBarItemScanner {
+    private static let statusItemWindowLayer = 25
+
+    /// Scans current menu bar items and classifies them relative to Eave's separator boundaries.
+    func scan(
+        hiddenSeparatorX: CGFloat?,
+        alwaysHiddenSeparatorX: CGFloat?,
+        excludingWindowIDs: Set<CGWindowID>
+    ) -> [MenuBarItemInfo] {
+        let primaryHeight = NotchGeometryResolver.currentGeometry().menuBarHeight
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+
+        var discovered = scanWindowList(
+            menuBarHeight: primaryHeight,
+            hiddenSeparatorX: hiddenSeparatorX,
+            alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
+            excludingWindowIDs: excludingWindowIDs,
+            ownPID: ownPID
+        )
+
+        if AXIsProcessTrusted() {
+            let axItems = scanAccessibilityExtras(
+                hiddenSeparatorX: hiddenSeparatorX,
+                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
+                ownPID: ownPID
+            )
+            // Merge AX items that were omitted by CGWindowList (common on macOS 26 Tahoe).
+            for axItem in axItems {
+                let alreadyPresent = discovered.contains { existing in
+                    existing.pid == axItem.pid && abs(existing.frame.midX - axItem.frame.midX) < 12
+                }
+                if !alreadyPresent {
+                    discovered.append(axItem)
+                }
+            }
+        }
+
+        return discovered.sorted { $0.frame.minX < $1.frame.minX }
+    }
+
+    // MARK: - Track 1: CGWindowList
+
+    private func scanWindowList(
+        menuBarHeight: CGFloat,
+        hiddenSeparatorX: CGFloat?,
+        alwaysHiddenSeparatorX: CGFloat?,
+        excludingWindowIDs: Set<CGWindowID>,
+        ownPID: pid_t
+    ) -> [MenuBarItemInfo] {
+        guard let rawList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+
+        let maxBarY = max(menuBarHeight + 10, 46)
+        var results: [MenuBarItemInfo] = []
+
+        for entry in rawList {
+            guard let layer = entry[kCGWindowLayer as String] as? Int,
+                  layer == Self.statusItemWindowLayer,
+                  let windowNumber = entry[kCGWindowNumber as String] as? UInt32,
+                  !excludingWindowIDs.contains(windowNumber),
+                  let pid = entry[kCGWindowOwnerPID as String] as? pid_t,
+                  pid != ownPID,
+                  let boundsDict = entry[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
+                continue
+            }
+
+            // Filter out invisible/zero-width helper windows and windows outside the top menu bar band.
+            guard bounds.width >= 4, bounds.width <= 320,
+                  bounds.height >= 8, bounds.height <= maxBarY,
+                  bounds.minY >= -4, bounds.minY <= maxBarY else {
+                continue
+            }
+
+            let app = NSRunningApplication(processIdentifier: pid)
+            let ownerName = (entry[kCGWindowOwnerName as String] as? String)
+                ?? app?.localizedName
+                ?? "Unknown"
+            let bundleID = app?.bundleIdentifier
+
+            // Skip Control Center internal invisible helper spacers.
+            if bundleID == "com.apple.WindowServer" || ownerName == "Window Server" {
+                continue
+            }
+
+            let title = (entry[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            let section = MenuBarSearchEngine.classifySection(
+                itemMidX: bounds.midX,
+                hiddenSeparatorX: hiddenSeparatorX,
+                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+            )
+
+            results.append(
+                MenuBarItemInfo(
+                    id: "win.\(windowNumber)",
+                    windowID: windowNumber,
+                    pid: pid,
+                    bundleIdentifier: bundleID,
+                    appName: ownerName,
+                    title: title,
+                    frame: bounds,
+                    section: section
+                )
+            )
+        }
+
+        return results
+    }
+
+    // MARK: - Track 2: AXExtrasMenuBar
+
+    private func scanAccessibilityExtras(
+        hiddenSeparatorX: CGFloat?,
+        alwaysHiddenSeparatorX: CGFloat?,
+        ownPID: pid_t
+    ) -> [MenuBarItemInfo] {
+        var results: [MenuBarItemInfo] = []
+
+        for app in NSWorkspace.shared.runningApplications {
+            let pid = app.processIdentifier
+            guard pid != ownPID, !app.isTerminated else { continue }
+
+            let appElement = AXUIElementCreateApplication(pid)
+            var extrasRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(appElement, "AXExtrasMenuBar" as CFString, &extrasRef) == .success,
+                  let extrasRef else {
+                continue
+            }
+
+            let extrasBar = extrasRef as! AXUIElement
+            var childrenRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(extrasBar, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+                  let children = childrenRef as? [AXUIElement] else {
+                continue
+            }
+
+            let appName = app.localizedName ?? app.bundleIdentifier ?? "App"
+            for (index, item) in children.enumerated() {
+                guard let frame = axFrame(of: item), frame.width >= 4 else { continue }
+                let title = axString(item, kAXTitleAttribute)
+                    ?? axString(item, kAXDescriptionAttribute)
+                    ?? ""
+
+                let section = MenuBarSearchEngine.classifySection(
+                    itemMidX: frame.midX,
+                    hiddenSeparatorX: hiddenSeparatorX,
+                    alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+                )
+
+                results.append(
+                    MenuBarItemInfo(
+                        id: "ax.\(pid).\(index)",
+                        windowID: 0,
+                        pid: pid,
+                        bundleIdentifier: app.bundleIdentifier,
+                        appName: appName,
+                        title: title,
+                        frame: frame,
+                        section: section
+                    )
+                )
+            }
+        }
+
+        return results
+    }
+
+    private func axString(_ element: AXUIElement, _ attribute: String) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success else { return nil }
+        let trimmed = (ref as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty == false) ? trimmed : nil
+    }
+
+    private func axFrame(of element: AXUIElement) -> CGRect? {
+        var posRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let posRef, let sizeRef else {
+            return nil
+        }
+
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(posRef as! AXValue, .cgPoint, &point),
+              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else {
+            return nil
+        }
+        return CGRect(origin: point, size: size)
+    }
+}
