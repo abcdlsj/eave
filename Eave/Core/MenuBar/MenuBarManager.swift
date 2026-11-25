@@ -180,8 +180,9 @@ final class MenuBarManager: NSObject {
         if defaults.object(forKey: hiddenKey) == nil {
             defaults.set(40.0, forKey: hiddenKey)
         }
+        // Place Always-Hidden far to the left when opted in so it never traps normal icons.
         if defaults.object(forKey: alwaysKey) == nil {
-            defaults.set(80.0, forKey: alwaysKey)
+            defaults.set(1200.0, forKey: alwaysKey)
         }
     }
 

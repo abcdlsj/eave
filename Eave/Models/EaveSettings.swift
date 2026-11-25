@@ -108,7 +108,8 @@ final class EaveSettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
-        self.enableAlwaysHiddenSection = defaults.object(forKey: Key.enableAlwaysHiddenSection) as? Bool ?? true
+        // Always-Hidden is opt-in so a single click expands every hidden icon out of the box.
+        self.enableAlwaysHiddenSection = defaults.object(forKey: Key.enableAlwaysHiddenSection) as? Bool ?? false
         self.rehideAutomatically = defaults.object(forKey: Key.rehideAutomatically) as? Bool ?? true
         self.rehideDelaySeconds = defaults.object(forKey: Key.rehideDelaySeconds) as? Double ?? 8.0
         self.rehideOnAppSwitch = defaults.object(forKey: Key.rehideOnAppSwitch) as? Bool ?? true
