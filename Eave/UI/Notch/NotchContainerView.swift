@@ -21,7 +21,7 @@ struct NotchContainerView: View {
     var body: some View {
         VStack(spacing: 0) {
             notchBody
-                .animation(.spring(response: 0.38, dampingFraction: 0.82), value: stateMachine.state)
+                .animation(.spring(response: 0.28, dampingFraction: 0.86), value: stateMachine.state)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -39,9 +39,8 @@ struct NotchContainerView: View {
 
         case .ambient(let indicators):
             ambientWings(indicators: indicators, baseW: baseW, baseH: baseH)
-                .background(notchShell(topRadius: 9, bottomRadius: 13))
-                .shadow(color: .black.opacity(0.28), radius: 8, y: 3)
-                .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
+                .background(notchShell(topRadius: 8, bottomRadius: 12))
+                .transition(.opacity)
 
         case .peek(let alert, let expanded):
             NotchPeekView(
@@ -53,11 +52,11 @@ struct NotchContainerView: View {
                 onDismiss: { stateMachine.dismissPeek() }
             )
             .frame(
-                width: expanded ? max(baseW + 200, 396) : baseW + 132,
+                width: expanded ? max(baseW + 150, 336) : baseW + 104,
                 alignment: .top
             )
-            .background(notchShell(topRadius: expanded ? 14 : 10, bottomRadius: expanded ? 24 : 15))
-            .shadow(color: .black.opacity(expanded ? 0.48 : 0.25), radius: expanded ? 24 : 10, y: expanded ? 10 : 4)
+            .background(notchShell(topRadius: expanded ? 12 : 9, bottomRadius: expanded ? 18 : 13))
+            .shadow(color: .black.opacity(expanded ? 0.34 : 0.16), radius: expanded ? 14 : 6, y: expanded ? 6 : 2)
 
         case .bar:
             NotchBarView(
@@ -73,8 +72,8 @@ struct NotchContainerView: View {
                 onClose: { stateMachine.closeBar() }
             )
             .frame(width: 520, alignment: .top)
-            .background(notchShell(topRadius: 15, bottomRadius: 24))
-            .shadow(color: .black.opacity(0.52), radius: 28, y: 12)
+            .background(notchShell(topRadius: 14, bottomRadius: 22))
+            .shadow(color: .black.opacity(0.38), radius: 16, y: 8)
         }
     }
 
@@ -87,45 +86,21 @@ struct NotchContainerView: View {
         )
 
         return HStack(spacing: 0) {
-            // Left ear: crisp micro App Icon or subtle colored pulse dot.
-            ZStack {
-                if let img = resolved.image {
-                    Image(nsImage: img)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 15, height: 15)
-                } else {
-                    Circle()
-                        .fill(resolved.accentColor)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: resolved.accentColor.opacity(0.75), radius: 4)
-                }
-            }
-            .frame(width: 30, height: baseH)
+            Circle()
+                .fill(resolved.accentColor)
+                .frame(width: 5.5, height: 5.5)
+                .frame(width: 22, height: baseH)
 
             Spacer(minLength: 0)
-                .frame(width: max(baseW - 10, 126))
+                .frame(width: max(baseW - 8, 124))
 
-            // Right ear: compact tabular badge count.
-            ZStack {
-                if let badge = primary?.badge, !badge.isEmpty {
-                    Text(badge)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.92))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(resolved.accentColor.opacity(0.85), in: Capsule())
-                } else {
-                    Text("\(indicators.count)")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-            }
-            .frame(width: 30, height: baseH)
+            Text(primary?.badge ?? "\(indicators.count)")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 22, height: baseH)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .contentShape(Rectangle())
         .onTapGesture {
             if let primary {

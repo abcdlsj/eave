@@ -59,7 +59,7 @@ final class AppCoordinator {
         wireHotKeys()
         wireSearch()
 
-        permissions.startPolling()
+        permissions.startPolling(interval: 8.0)
         eventMonitor.start()
         signalHub.start()
         startHiddenDiscoverySync()
@@ -145,7 +145,7 @@ final class AppCoordinator {
         isScanningBarItems = true
         defer { isScanningBarItems = false }
 
-        let scanned = itemScanner.scan(
+        let scanned = await itemScanner.scanAsync(
             hiddenSeparatorX: menuBarManager.hiddenSeparatorX,
             alwaysHiddenSeparatorX: menuBarManager.alwaysHiddenSeparatorX,
             excludingWindowIDs: menuBarManager.ownedWindowIDs
@@ -263,6 +263,9 @@ final class AppCoordinator {
         eventMonitor.onMouseMoved = { [weak self] point in
             self?.notchPanelController?.handleGlobalPointerMove(to: point)
         }
+        eventMonitor.needsPointerTracking = { [weak self] in
+            self?.notchStateMachine.isInteractiveState ?? false
+        }
     }
 
     private func wireHotKeys() {
@@ -295,7 +298,7 @@ final class AppCoordinator {
 
     private func startHiddenDiscoverySync() {
         performLightweightHiddenScan()
-        hiddenSyncTimer = Timer.scheduledTimer(withTimeInterval: 6.0, repeats: true) { [weak self] _ in
+        hiddenSyncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.performLightweightHiddenScan()
             }
@@ -303,12 +306,25 @@ final class AppCoordinator {
     }
 
     private func performLightweightHiddenScan() {
-        let scanned = itemScanner.scan(
-            hiddenSeparatorX: menuBarManager.hiddenSeparatorX,
-            alwaysHiddenSeparatorX: menuBarManager.alwaysHiddenSeparatorX,
-            excludingWindowIDs: menuBarManager.ownedWindowIDs
-        )
-        syncHiddenBundleIDs(from: scanned)
+        let hiddenX = menuBarManager.hiddenSeparatorX
+        let alwaysX = menuBarManager.alwaysHiddenSeparatorX
+        let owned = menuBarManager.ownedWindowIDs
+        Task { [weak self] in
+            guard let self else { return }
+            let scanned = await self.itemScanner.scanAsync(
+                hiddenSeparatorX: hiddenX,
+                alwaysHiddenSeparatorX: alwaysX,
+                excludingWindowIDs: owned
+            )
+            self.syncHiddenBundleIDs(from: scanned)
+            // Keep Notch Bar icon cache warm so pressing ⌥⌘N opens instantaneously with zero lag.
+            if !self.isScanningBarItems {
+                self.capturedItems = await self.imageCapturer.captureItems(
+                    scanned,
+                    allowLiveCapture: self.settings.enableLiveIconCapture
+                )
+            }
+        }
     }
 
     private func syncHiddenBundleIDs(from items: [MenuBarItemInfo]) {

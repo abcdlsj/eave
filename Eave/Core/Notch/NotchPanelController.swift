@@ -88,22 +88,21 @@ final class NotchPanelController {
         let activeRect = activeHitRect()
         let inside = activeRect.contains(point)
 
+        let shouldIgnore: Bool
         switch stateMachine.state {
         case .idle:
-            panel.ignoresMouseEvents = true
+            shouldIgnore = true
         case .ambient:
-            // Allow clicking ambient wings without blocking the rest of the menu bar.
-            panel.ignoresMouseEvents = !inside
-        case .peek:
-            panel.ignoresMouseEvents = !inside
+            shouldIgnore = !inside
+        case .peek, .bar:
+            shouldIgnore = !inside
             if inside != stateMachine.isHovering {
                 stateMachine.setHovering(inside)
             }
-        case .bar:
-            panel.ignoresMouseEvents = !inside
-            if inside != stateMachine.isHovering {
-                stateMachine.setHovering(inside)
-            }
+        }
+
+        if panel.ignoresMouseEvents != shouldIgnore {
+            panel.ignoresMouseEvents = shouldIgnore
         }
     }
 
@@ -141,17 +140,17 @@ final class NotchPanelController {
         case .idle:
             return .zero
         case .ambient:
-            let w = baseW + 76
-            let h = baseH + 4
+            let w = baseW + 58
+            let h = baseH + 2
             return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
         case .peek(_, let expanded):
             if expanded {
-                let w: CGFloat = max(baseW + 200, 396)
-                let h: CGFloat = baseH + 96
+                let w: CGFloat = max(baseW + 150, 336)
+                let h: CGFloat = baseH + 64
                 return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
             } else {
-                let w: CGFloat = baseW + 132
-                let h: CGFloat = baseH + 6
+                let w: CGFloat = baseW + 104
+                let h: CGFloat = baseH + 4
                 return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
             }
         case .bar:

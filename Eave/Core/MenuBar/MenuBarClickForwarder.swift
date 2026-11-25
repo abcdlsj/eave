@@ -31,8 +31,8 @@ final class MenuBarClickForwarder {
             return
         }
 
-        // Strategy 2: Re-scan live screen coordinate and synthesize a quick click, restoring cursor.
-        let refreshed = scanner.scan(
+        // Strategy 2: Re-scan live screen coordinate off-main and synthesize a quick click, restoring cursor.
+        let refreshed = await scanner.scanAsync(
             hiddenSeparatorX: menuBarManager.hiddenSeparatorX,
             alwaysHiddenSeparatorX: menuBarManager.alwaysHiddenSeparatorX,
             excludingWindowIDs: menuBarManager.ownedWindowIDs

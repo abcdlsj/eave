@@ -43,7 +43,6 @@ enum DockBadgeDiffEngine {
             }
         }
 
-        // Also clear any previously tracked bundle ID that is no longer badged.
         for oldBundleID in previous.keys where current[oldBundleID] == nil && !cleared.contains(oldBundleID) {
             cleared.append(oldBundleID)
         }
@@ -54,13 +53,11 @@ enum DockBadgeDiffEngine {
         )
     }
 
-    /// Returns true if a badge changed to a higher unread count or a distinct non-decreasing label.
     static func shouldTriggerIncrease(from old: String, to new: String) -> Bool {
         guard old != new else { return false }
         if let oldInt = parseLeadingInt(old), let newInt = parseLeadingInt(new) {
             return newInt > oldInt
         }
-        // Non-numeric badge change (e.g. "•" -> "1" or "New") triggers once.
         return !new.isEmpty
     }
 
@@ -71,18 +68,19 @@ enum DockBadgeDiffEngine {
     }
 }
 
-/// Monitors Dock tile `AXStatusLabel` attributes via macOS Accessibility APIs.
-/// Zero screen recording required; zero privacy indicator dot.
+/// Monitors Dock tile `AXStatusLabel` attributes via macOS Accessibility APIs on a background utility task
+/// so Dock IPC never blocks the main UI thread.
 @MainActor
 final class DockBadgeMonitor {
     private var timer: Timer?
     private var previousBadges: [String: String] = [:]
     private var isPrimed: Bool = false
+    private var isPolling: Bool = false
 
     var watchedBundleIDsProvider: (() -> Set<String>)?
     var onBadgesChanged: ((DockBadgeDiffEngine.DiffResult, [String: DockBadgeSnapshot]) -> Void)?
 
-    func start(interval: TimeInterval = 2.0) {
+    func start(interval: TimeInterval = 3.0) {
         stop()
         isPrimed = false
         poll()
@@ -99,11 +97,32 @@ final class DockBadgeMonitor {
     }
 
     func poll() {
-        guard AXIsProcessTrusted() else { return }
-        let watched = watchedBundleIDsProvider?() ?? []
-        let current = readCurrentDockBadges()
+        guard !isPolling, AXIsProcessTrusted() else { return }
+        guard let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier else {
+            return
+        }
 
-        // On first read, record existing badges without spamming peeks for already-unread apps.
+        let watched = watchedBundleIDsProvider?() ?? []
+        let runningNameMap: [String: String] = Dictionary(
+            NSWorkspace.shared.runningApplications.compactMap { app in
+                guard let name = app.localizedName?.lowercased(), let id = app.bundleIdentifier else { return nil }
+                return (name, id)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        isPolling = true
+        Task { [weak self] in
+            let current = await Task.detached(priority: .utility) {
+                Self.readCurrentDockBadges(dockPID: dockPID, runningNameMap: runningNameMap)
+            }.value
+            guard let self else { return }
+            self.isPolling = false
+            self.processPollResult(current: current, watched: watched)
+        }
+    }
+
+    private func processPollResult(current: [String: DockBadgeSnapshot], watched: Set<String>) {
         if !isPrimed {
             isPrimed = true
             previousBadges = current.mapValues(\.badge)
@@ -126,14 +145,13 @@ final class DockBadgeMonitor {
         }
     }
 
-    // MARK: - Accessibility Dock Traversal
+    // MARK: - Background Accessibility Dock Traversal
 
-    private func readCurrentDockBadges() -> [String: DockBadgeSnapshot] {
-        guard let dockApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
-            return [:]
-        }
-
-        let dockElement = AXUIElementCreateApplication(dockApp.processIdentifier)
+    private nonisolated static func readCurrentDockBadges(
+        dockPID: pid_t,
+        runningNameMap: [String: String]
+    ) -> [String: DockBadgeSnapshot] {
+        let dockElement = AXUIElementCreateApplication(dockPID)
         guard let children = copyChildren(of: dockElement) else { return [:] }
 
         var results: [String: DockBadgeSnapshot] = [:]
@@ -146,7 +164,7 @@ final class DockBadgeMonitor {
                 }
 
                 let title = copyStringAttribute(item, attribute: kAXTitleAttribute) ?? "App"
-                if let bundleID = resolveBundleIdentifier(for: item, fallbackTitle: title) {
+                if let bundleID = resolveBundleIdentifier(for: item, fallbackTitle: title, runningNameMap: runningNameMap) {
                     results[bundleID] = DockBadgeSnapshot(
                         bundleIdentifier: bundleID,
                         appName: title,
@@ -158,7 +176,11 @@ final class DockBadgeMonitor {
         return results
     }
 
-    private func resolveBundleIdentifier(for dockItem: AXUIElement, fallbackTitle: String) -> String? {
+    private nonisolated static func resolveBundleIdentifier(
+        for dockItem: AXUIElement,
+        fallbackTitle: String,
+        runningNameMap: [String: String]
+    ) -> String? {
         var value: CFTypeRef?
         if AXUIElementCopyAttributeValue(dockItem, kAXURLAttribute as CFString, &value) == .success,
            let url = value as? URL,
@@ -166,17 +188,10 @@ final class DockBadgeMonitor {
            let id = bundle.bundleIdentifier {
             return id
         }
-
-        // Fallback: match against currently running apps by localized name.
-        if let app = NSWorkspace.shared.runningApplications.first(where: {
-            $0.localizedName?.caseInsensitiveCompare(fallbackTitle) == .orderedSame
-        }) {
-            return app.bundleIdentifier
-        }
-        return nil
+        return runningNameMap[fallbackTitle.lowercased()]
     }
 
-    private func copyChildren(of element: AXUIElement) -> [AXUIElement]? {
+    private nonisolated static func copyChildren(of element: AXUIElement) -> [AXUIElement]? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
               let array = value as? [AXUIElement] else {
@@ -185,7 +200,7 @@ final class DockBadgeMonitor {
         return array
     }
 
-    private func copyStringAttribute(_ element: AXUIElement, attribute: String) -> String? {
+    private nonisolated static func copyStringAttribute(_ element: AXUIElement, attribute: String) -> String? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
               let string = value as? String else {

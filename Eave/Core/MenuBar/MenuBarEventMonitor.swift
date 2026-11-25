@@ -1,7 +1,8 @@
 import AppKit
 import Foundation
 
-/// Passive global event monitor for menu bar scroll gestures, hover-to-expand, and click-away rehide.
+/// Lightweight global event monitor for menu bar scroll gestures, hover-to-expand, and click-away rehide.
+/// Designed for zero per-pixel Task allocations and negligible CPU overhead during normal mouse movement.
 @MainActor
 final class MenuBarEventMonitor {
     private let settings: EaveSettings
@@ -9,13 +10,16 @@ final class MenuBarEventMonitor {
     private var globalClickMonitor: Any?
     private var globalMoveMonitor: Any?
     private var hoverTimer: Timer?
-    private var lastScrollTriggerDate: Date = .distantPast
+    private var lastScrollTriggerTime: CFAbsoluteTime = 0
+    private var lastMoveDispatchTime: CFAbsoluteTime = 0
 
     var onScrollExpand: (() -> Void)?
     var onScrollCollapse: (() -> Void)?
     var onHoverExpand: (() -> Void)?
     var onOutsideClick: (() -> Void)?
     var onMouseMoved: ((CGPoint) -> Void)?
+    /// Returns true only when the Notch panel is non-idle and actually needs pointer hit-test updates.
+    var needsPointerTracking: (() -> Bool)?
 
     init(settings: EaveSettings) {
         self.settings = settings
@@ -25,25 +29,20 @@ final class MenuBarEventMonitor {
         stop()
 
         globalScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            let deltaY = event.scrollingDeltaY
-            let deltaX = event.scrollingDeltaX
-            let location = NSEvent.mouseLocation
-            Task { @MainActor [weak self] in
-                self?.handleScroll(deltaX: deltaX, deltaY: deltaY, location: location)
+            MainActor.assumeIsolated {
+                self?.handleScroll(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY, location: NSEvent.mouseLocation)
             }
         }
 
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor [weak self] in
-                self?.handleOutsideClick(location: location)
+            MainActor.assumeIsolated {
+                self?.handleOutsideClick(location: NSEvent.mouseLocation)
             }
         }
 
         globalMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
-            let location = NSEvent.mouseLocation
-            Task { @MainActor [weak self] in
-                self?.handleMouseMoved(location: location)
+            MainActor.assumeIsolated {
+                self?.handleMouseMoved(location: NSEvent.mouseLocation)
             }
         }
     }
@@ -61,13 +60,13 @@ final class MenuBarEventMonitor {
 
     private func handleScroll(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint) {
         guard settings.expandOnMenuBarScroll, isInMenuBar(location) else { return }
-        let now = Date()
-        guard now.timeIntervalSince(lastScrollTriggerDate) > 0.35 else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastScrollTriggerTime > 0.35 else { return }
 
         let magnitude = abs(deltaY) >= abs(deltaX) ? deltaY : deltaX
         guard abs(magnitude) > 2.5 else { return }
 
-        lastScrollTriggerDate = now
+        lastScrollTriggerTime = now
         if magnitude > 0 {
             onScrollExpand?()
         } else {
@@ -81,11 +80,25 @@ final class MenuBarEventMonitor {
     }
 
     private func handleMouseMoved(location: CGPoint) {
-        onMouseMoved?(location)
+        let shouldTrackNotch = needsPointerTracking?() ?? false
+        let shouldTrackHover = settings.expandOnMenuBarHover
+        // Fast-path exit when Notch is idle and menu-bar hover-expand is off: zero work per move.
+        guard shouldTrackNotch || shouldTrackHover else { return }
 
-        guard settings.expandOnMenuBarHover else {
-            hoverTimer?.invalidate()
-            hoverTimer = nil
+        // Coalesce pointer updates to ~30Hz to keep idle CPU near 0%.
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastMoveDispatchTime >= 0.032 else { return }
+        lastMoveDispatchTime = now
+
+        if shouldTrackNotch {
+            onMouseMoved?(location)
+        }
+
+        guard shouldTrackHover else {
+            if hoverTimer != nil {
+                hoverTimer?.invalidate()
+                hoverTimer = nil
+            }
             return
         }
 
@@ -99,7 +112,7 @@ final class MenuBarEventMonitor {
                     }
                 }
             }
-        } else {
+        } else if hoverTimer != nil {
             hoverTimer?.invalidate()
             hoverTimer = nil
         }

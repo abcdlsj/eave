@@ -193,24 +193,32 @@ private struct NotchBarIconTile: View {
         Button(action: onSelect) {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    // Ambient per-app color aura glowing softly on hover.
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(resolved.accentColor.opacity(isHovered ? 0.34 : 0.0))
-                        .frame(width: 44, height: 44)
-                        .blur(radius: isHovered ? 11 : 0)
+                    // GPU-native radial color aura on hover (zero offscreen Gaussian blur cost).
+                    if isHovered {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [resolved.accentColor.opacity(0.32), .clear],
+                                    center: .center,
+                                    startRadius: 2,
+                                    endRadius: 28
+                                )
+                            )
+                            .frame(width: 54, height: 54)
+                    }
 
                     // Subtle machined hover pad (invisible at rest so icons float cleanly like a Dock).
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color.white.opacity(isHovered ? 0.11 : 0.0))
+                        .fill(Color.white.opacity(isHovered ? 0.10 : 0.0))
                         .overlay(
                             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .strokeBorder(Color.white.opacity(isHovered ? 0.16 : 0.0), lineWidth: 0.6)
+                                .strokeBorder(Color.white.opacity(isHovered ? 0.15 : 0.0), lineWidth: 0.6)
                         )
                         .frame(width: 46, height: 46)
 
                     iconVisual
                         .frame(width: 46, height: 46)
-                        .scaleEffect(isHovered ? 1.10 : 1.0)
+                        .scaleEffect(isHovered ? 1.09 : 1.0)
                         .offset(y: isHovered ? -1.5 : 0)
 
                     // Live unread badge dot/count overlaid cleanly on top-right corner.
