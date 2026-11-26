@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
 import XCTest
@@ -465,7 +466,7 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertFalse(s1.hasCompletedOnboarding)
         XCTAssertTrue(s1.rehideAutomatically)
         XCTAssertTrue(s1.expandOnEaveHover)
-        XCTAssertEqual(s1.hoverDisplayMode, .inline)
+        XCTAssertEqual(s1.hoverDisplayMode, .secondRow)
         XCTAssertEqual(s1.secondRowLayoutMode, .horizontalScroll)
         XCTAssertEqual(s1.secondRowItemsPerRow, EaveSettings.defaultSecondRowItemsPerRow)
         XCTAssertEqual(s1.appearanceMode, .system)
@@ -476,7 +477,7 @@ final class EaveCoreTests: XCTestCase {
         s1.rehideAutomatically = false
         s1.expandOnEaveHover = false
         s1.hoverDelaySeconds = 0.35
-        s1.hoverDisplayMode = .secondRow
+        s1.hoverDisplayMode = .inline
         s1.secondRowLayoutMode = .multiRow
         s1.secondRowItemsPerRow = 6
         s1.appearanceMode = .dark
@@ -490,7 +491,7 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertFalse(s2.rehideAutomatically)
         XCTAssertFalse(s2.expandOnEaveHover)
         XCTAssertEqual(s2.hoverDelaySeconds, 0.35, accuracy: 0.001)
-        XCTAssertEqual(s2.hoverDisplayMode, .secondRow)
+        XCTAssertEqual(s2.hoverDisplayMode, .inline)
         XCTAssertEqual(s2.secondRowLayoutMode, .multiRow)
         XCTAssertEqual(s2.secondRowItemsPerRow, 6)
         XCTAssertEqual(s2.appearanceMode, .dark)
@@ -618,5 +619,80 @@ final class EaveCoreTests: XCTestCase {
 
         let distant = EaveDockMagnification.resolve(index: 4, hoveredIndex: 2)
         XCTAssertEqual(distant, .resting)
+    }
+
+    // MARK: - Review Fix Regression Tests
+
+    func testSeparatorOrderGuard() {
+        let toggle = CGRect(x: 1400, y: 950, width: 24, height: 24)
+        XCTAssertTrue(MenuBarManager.isSeparatorOrderValid(
+            separatorFrame: CGRect(x: 1360, y: 950, width: 10, height: 24), toggleFrame: toggle))
+        XCTAssertFalse(MenuBarManager.isSeparatorOrderValid(
+            separatorFrame: CGRect(x: 1440, y: 950, width: 10, height: 24), toggleFrame: toggle))
+        // Different displays / rows are not comparable and must never block collapsing.
+        XCTAssertTrue(MenuBarManager.isSeparatorOrderValid(
+            separatorFrame: CGRect(x: 1440, y: 2000, width: 10, height: 24), toggleFrame: toggle))
+    }
+
+    func testTransientUIWindowClassification() {
+        let bounds = CGRect(x: 0, y: 0, width: 240, height: 300)
+        XCTAssertTrue(MenuBarManager.isTransientUIWindow(layer: 101, bounds: bounds))
+        XCTAssertTrue(MenuBarManager.isTransientUIWindow(layer: 3, bounds: bounds))
+        XCTAssertFalse(MenuBarManager.isTransientUIWindow(layer: 0, bounds: bounds))
+        XCTAssertFalse(MenuBarManager.isTransientUIWindow(layer: 25, bounds: bounds))
+        XCTAssertFalse(MenuBarManager.isTransientUIWindow(layer: 101, bounds: CGRect(x: 0, y: 0, width: 2, height: 2)))
+    }
+
+    func testAXWatcherSignatureIgnoresLiveReadouts() {
+        let a = MenuBarAXWatcher.signatureComponent(description: "Upload 1.2 MB/s", identifier: nil)
+        let b = MenuBarAXWatcher.signatureComponent(description: "Upload 34.7 MB/s", identifier: nil)
+        XCTAssertEqual(a, b)
+        let quiet = MenuBarAXWatcher.signatureComponent(description: "Slack", identifier: nil)
+        let unread = MenuBarAXWatcher.signatureComponent(description: "Slack, unread messages", identifier: nil)
+        XCTAssertNotEqual(quiet, unread)
+        XCTAssertNil(MenuBarAXWatcher.signatureComponent(description: "  ", identifier: nil))
+    }
+
+    func testHotKeyValidationAndDefaults() {
+        let shiftOnly = KeyCombo(keyCode: 0, carbonModifiers: UInt32(shiftKey))
+        XCTAssertFalse(shiftOnly.isValidGlobalHotKey)
+        XCTAssertTrue(KeyCombo(keyCode: 0, carbonModifiers: UInt32(optionKey | shiftKey)).isValidGlobalHotKey)
+        // ⌥⌘H is the system "Hide Others" shortcut and must not be Eave's default.
+        let hideOthers = KeyCombo(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: UInt32(optionKey | cmdKey))
+        XCTAssertNotEqual(HotKeyAction.toggleHidden.defaultCombo, hideOthers)
+        XCTAssertTrue(HotKeyAction.allCases.allSatisfy { $0.defaultCombo.isValidGlobalHotKey })
+    }
+
+    @MainActor
+    func testClearedHotKeyStaysClearedAcrossLaunches() {
+        let suiteName = "com.abcdlsj.eave.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let s1 = EaveSettings(defaults: defaults)
+        XCTAssertNotNil(s1.hotKey(for: .openSearch))
+        s1.setHotKey(nil, for: .openSearch)
+        XCTAssertNil(EaveSettings(defaults: defaults).hotKey(for: .openSearch))
+
+        let combo = KeyCombo(keyCode: UInt32(kVK_ANSI_J), carbonModifiers: UInt32(controlKey | optionKey))
+        s1.setHotKey(combo, for: .openSearch)
+        XCTAssertEqual(EaveSettings(defaults: defaults).hotKey(for: .openSearch), combo)
+    }
+
+    @MainActor
+    func testNotchStateMachineResetsHoverAndCapsAmbient() {
+        let sm = NotchStateMachine()
+        sm.enableAutoDismissTimers = false
+
+        sm.presentPeek(NotchAlert(source: .system, badge: "1"))
+        sm.setHovering(true)
+        sm.dismissPeek()
+        XCTAssertFalse(sm.isHovering, "Clicking the notch must not leave a stale hover flag behind")
+
+        for i in 0..<(NotchStateMachine.maxAmbientIndicators + 5) {
+            sm.upsertAmbient(AmbientIndicator(id: "bridge.\(i)", source: .bridge))
+        }
+        XCTAssertEqual(sm.ambientIndicators.count, NotchStateMachine.maxAmbientIndicators)
+        XCTAssertEqual(sm.ambientIndicators.first?.id, "bridge.5")
     }
 }
