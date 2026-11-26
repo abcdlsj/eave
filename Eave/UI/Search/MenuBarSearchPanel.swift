@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Observation
 import SwiftUI
 
@@ -54,6 +55,11 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private var panel: MenuBarSearchWindow?
     private var keyMonitor: Any?
     private var closeTask: Task<Void, Never>?
+    /// App that was frontmost before the panel opened; re-activated when the panel is dismissed without a selection.
+    @ObservationIgnored private var previousFrontmostApp: NSRunningApplication?
+    /// Last pointer location that produced a hover selection, used to ignore hover events caused by
+    /// rows scrolling under a stationary pointer during keyboard navigation.
+    @ObservationIgnored private var lastHoverMouseLocation: CGPoint?
 
     private(set) var appearanceMode: AppAppearanceMode = .system
     var query: String = "" {
@@ -67,6 +73,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private(set) var isVisible: Bool = false
     private(set) var isPresented: Bool = false
     private(set) var isRefreshing: Bool = false
+    private(set) var hasAccessibilityPermission: Bool = true
 
     var onSelectItem: ((MenuBarItemInfo) -> Void)?
     var onRequestRefreshItems: (() async -> [MenuBarItemInfo])?
@@ -89,7 +96,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
 
     func toggle() {
         if isVisible {
-            close()
+            close(restoringFocus: true)
         } else {
             open()
         }
@@ -107,6 +114,11 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         selectedIndex = 0
         isVisible = true
         isPresented = false
+        hasAccessibilityPermission = AXIsProcessTrusted()
+        lastHoverMouseLocation = NSEvent.mouseLocation
+
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        previousFrontmostApp = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
 
         if panel == nil {
             let rect = NSRect(x: 0, y: 0, width: 556, height: 416)
@@ -118,7 +130,9 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
             panel = window
         }
 
-        if let panel, let screen = NotchGeometryResolver.preferredScreen() ?? NSScreen.main {
+        let mouse = NSEvent.mouseLocation
+        let mouseScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+        if let panel, let screen = mouseScreen ?? NotchGeometryResolver.preferredScreen() ?? NSScreen.main {
             let x = screen.frame.midX - panel.frame.width / 2
             let y = screen.frame.maxY - panel.frame.height - 135
             panel.setFrameOrigin(NSPoint(x: x, y: y))
@@ -145,9 +159,16 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         }
     }
 
-    func close() {
+    /// Dismisses the panel. Pass `restoringFocus: true` for explicit dismissals (Escape, hotkey toggle)
+    /// so the previously frontmost app gets keyboard focus back; selections leave focus to the opened item.
+    func close(restoringFocus: Bool = false) {
         guard isVisible else { return }
         isVisible = false
+        let appToRestore = previousFrontmostApp
+        previousFrontmostApp = nil
+        if restoringFocus, NSApp.isActive, let appToRestore, !appToRestore.isTerminated {
+            appToRestore.activate()
+        }
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
@@ -180,6 +201,17 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         onSelectItem?(info)
     }
 
+    /// Returns true when a hover over a row should move the selection, i.e. the pointer actually moved
+    /// (rather than rows scrolling beneath a stationary pointer).
+    func shouldAcceptHoverSelection() -> Bool {
+        let location = NSEvent.mouseLocation
+        if let last = lastHoverMouseLocation, hypot(location.x - last.x, location.y - last.y) < 0.5 {
+            return false
+        }
+        lastHoverMouseLocation = location
+        return true
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         if isVisible {
             close()
@@ -192,7 +224,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
             guard let self, self.isVisible else { return event }
             switch event.keyCode {
             case 53: // Escape
-                self.close()
+                self.close(restoringFocus: true)
                 return nil
             case 48: // Tab cycles section filter
                 EaveHaptics.tick()
@@ -296,12 +328,14 @@ struct MenuBarSearchView: View {
                     Image(systemName: controller.query.isEmpty ? "rectangle.topthird.inset.filled" : "magnifyingglass")
                         .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(.tertiary)
-                    Text(controller.query.isEmpty ? "No menu bar items discovered" : "No matches for \"\(controller.query)\"")
+                    Text(controller.query.isEmpty ? "No matching menu bar items" : "No matches for \"\(controller.query)\"")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
-                    Text("Grant Accessibility permission in Settings for complete discovery.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.tertiary)
+                    if !controller.hasAccessibilityPermission {
+                        Text("Grant Accessibility permission in Settings to find hidden items.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .padding(.horizontal, 36)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -316,6 +350,7 @@ struct MenuBarSearchView: View {
                                     isSelected: index == controller.selectedIndex,
                                     selectionNamespace: selectionNamespace,
                                     onHoverSelect: {
+                                        guard controller.shouldAcceptHoverSelection() else { return }
                                         if controller.selectedIndex != index {
                                             withAnimation(EaveMotion.microSpring) {
                                                 controller.selectedIndex = index
