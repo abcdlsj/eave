@@ -33,7 +33,8 @@ Accessibility; without it Eave cannot move or click other apps' menu bar items.
 
 ## Build & Run
 
-Requires Xcode 16+ / Swift 6 and `xcodegen`.
+Requires Xcode 26 (the build uses the macOS 26 SDK for Liquid Glass; the app itself
+still deploys to macOS 15) and `xcodegen`.
 
 ```bash
 # Generate icons and Xcode project

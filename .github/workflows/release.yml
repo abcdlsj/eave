@@ -54,6 +54,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
+      # The default Xcode on the macos-15 image is 16.4, whose SDK predates the
+      # Liquid Glass APIs Eave compiles against under #available(macOS 26).
+      - name: Select the newest Xcode 26
+        run: |
+          set -euo pipefail
+          LATEST="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          [ -n "$LATEST" ] || { echo "::error::no Xcode 26 on this runner"; exit 1; }
+          sudo xcode-select -s "$LATEST"
+          xcodebuild -version
       - run: brew install xcodegen
       - name: Build, sign and pack the dmg
         env:
