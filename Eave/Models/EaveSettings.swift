@@ -32,6 +32,7 @@ final class EaveSettings {
         static let enableNotchBridge = "eave.enableNotchBridge"
 
         static let hotKeyPrefix = "eave.hotkey."
+        static let hotKeyClearedSuffix = ".cleared"
     }
 
     // MARK: - General & Menu Bar
@@ -123,7 +124,7 @@ final class EaveSettings {
            let mode = HoverDisplayMode(rawValue: rawMode) {
             self.hoverDisplayMode = mode
         } else {
-            self.hoverDisplayMode = .inline
+            self.hoverDisplayMode = .secondRow
         }
 
         if let rawLayout = defaults.string(forKey: Key.secondRowLayoutMode),
@@ -146,7 +147,11 @@ final class EaveSettings {
         self.enableNotchBridge = defaults.object(forKey: Key.enableNotchBridge) as? Bool ?? true
 
         for action in HotKeyAction.allCases {
-            if let data = defaults.data(forKey: Key.hotKeyPrefix + action.rawValue),
+            let key = Key.hotKeyPrefix + action.rawValue
+            if defaults.bool(forKey: key + Key.hotKeyClearedSuffix) {
+                // User explicitly cleared this shortcut; don't resurrect the default on relaunch.
+                hotKeys[action] = nil
+            } else if let data = defaults.data(forKey: key),
                let combo = try? JSONDecoder().decode(KeyCombo.self, from: data) {
                 hotKeys[action] = combo
             } else {
@@ -164,8 +169,10 @@ final class EaveSettings {
         let key = Key.hotKeyPrefix + action.rawValue
         if let combo, let data = try? JSONEncoder().encode(combo) {
             defaults.set(data, forKey: key)
+            defaults.removeObject(forKey: key + Key.hotKeyClearedSuffix)
         } else {
             defaults.removeObject(forKey: key)
+            defaults.set(true, forKey: key + Key.hotKeyClearedSuffix)
         }
     }
 

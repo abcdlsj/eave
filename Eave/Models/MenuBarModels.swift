@@ -122,8 +122,8 @@ enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
     var defaultCombo: KeyCombo {
         switch self {
         case .toggleHidden:
-            // Option + Command + H
-            KeyCombo(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: UInt32(optionKey | cmdKey))
+            // Control + Option + Command + H. Plain ⌥⌘H is the system-wide "Hide Others" shortcut.
+            KeyCombo(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: UInt32(controlKey | optionKey | cmdKey))
         case .openSearch:
             // Option + Command + K
             KeyCombo(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: UInt32(optionKey | cmdKey))
@@ -153,6 +153,11 @@ struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         if flags.contains(.control) { result |= UInt32(controlKey) }
         if flags.contains(.shift) { result |= UInt32(shiftKey) }
         return result
+    }
+
+    /// A global hotkey must include ⌘, ⌥, or ⌃; Shift-only combos would swallow normal typing (e.g. ⇧A).
+    var isValidGlobalHotKey: Bool {
+        carbonModifiers & UInt32(cmdKey | optionKey | controlKey) != 0
     }
 
     var displayString: String {

@@ -40,14 +40,17 @@ final class HotKeyManager {
         }
     }
 
-    func register(action: HotKeyAction, combo: KeyCombo?) {
+    /// Registers (or clears, when `combo` is nil) the global shortcut for `action`.
+    /// Returns false when the system refused the combo (typically already taken by another app).
+    @discardableResult
+    func register(action: HotKeyAction, combo: KeyCombo?) -> Bool {
         // Unregister existing binding for this action first.
         if let oldID = actionToID.removeValue(forKey: action),
            let existing = registeredHotKeys.removeValue(forKey: oldID) {
             UnregisterEventHotKey(existing.ref)
         }
 
-        guard let combo else { return }
+        guard let combo else { return true }
 
         let id = nextID
         nextID += 1
@@ -66,7 +69,19 @@ final class HotKeyManager {
         if status == noErr, let ref {
             registeredHotKeys[id] = (action: action, ref: ref)
             actionToID[action] = id
+            return true
         }
+        return false
+    }
+
+    /// Temporarily releases every registered shortcut (e.g. while the recorder captures a new combo,
+    /// so pressing the current shortcut records it instead of firing it).
+    func suspendAll() {
+        for entry in registeredHotKeys.values {
+            UnregisterEventHotKey(entry.ref)
+        }
+        registeredHotKeys.removeAll()
+        actionToID.removeAll()
     }
 
     private func installEventHandler() {
