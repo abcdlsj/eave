@@ -30,6 +30,10 @@ struct SettingsView: View {
         }
     }
 
+    private static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -70,7 +74,7 @@ struct SettingsView: View {
                     Text("Eave")
                         .font(.system(size: 14.5, weight: .semibold))
                         .tracking(-0.2)
-                    Text("Version 0.1.0")
+                    Text("Version \(Self.appVersion)")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.tertiary)
                 }

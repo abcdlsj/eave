@@ -14,6 +14,23 @@ A native macOS menu bar manager with Notch integration, built with pure Swift (`
 - **NotchBridge (Local Automation API)**: Send custom peeks or ambient indicators to the notch from any shell script, CLI, or your own apps via URL Scheme (`eave://notify?...`) or `DistributedNotificationCenter`.
 - **Menu Bar Spacing Control**: Adjust system `NSStatusItemSpacing` and selection padding with one-click reset.
 
+## Install
+
+Requires macOS 15 or newer.
+
+```bash
+brew tap abcdlsj/tap
+brew trust abcdlsj/tap  # Homebrew refuses to load casks from an untrusted third-party tap
+brew install --cask eave
+```
+
+Or download the dmg from [Releases](https://github.com/abcdlsj/eave/releases). Release builds are
+ad-hoc signed and not notarised: a browser download is blocked by Gatekeeper on first launch
+(right-click → Open), while a Homebrew install carries no quarantine attribute and just runs.
+
+On first launch grant Accessibility access in System Settings → Privacy & Security →
+Accessibility; without it Eave cannot move or click other apps' menu bar items.
+
 ## Build & Run
 
 Requires Xcode 16+ / Swift 6 and `xcodegen`.
@@ -27,6 +44,22 @@ xcodegen generate
 xcodebuild -project Eave.xcodeproj -scheme Eave -configuration Debug build
 xcodebuild -project Eave.xcodeproj -scheme Eave -configuration Debug test
 ```
+
+## Release
+
+Tagging `vX.Y.Z` runs [`.github/workflows/release.yml`](.github/workflows/release.yml): it builds
+the universal dmg, publishes the GitHub release, and attaches an `eave.rb` cask generated from the
+real dmg checksum. Copy that file into `abcdlsj/homebrew-tap`'s `Casks/`.
+
+Bump `MARKETING_VERSION` in [project.yml](project.yml) before tagging; the workflow fails when the
+tag and that version disagree. The same packaging runs locally:
+
+```bash
+scripts/package-release.sh 0.2.0                        # dmg + zip in dist/
+scripts/write-cask.sh 0.2.0 dist/eave_0.2.0_darwin_universal.dmg  # dist/eave.rb
+```
+
+Set `EAVE_SIGN_IDENTITY` to sign with a Developer ID instead of ad-hoc.
 
 ## NotchBridge CLI Example
 

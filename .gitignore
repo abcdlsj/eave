@@ -22,3 +22,6 @@ DerivedData/
 # Local machine-specific notes and tooling (never tracked)
 .local/
 
+
+# Release artifacts
+dist/

@@ -1,0 +1,155 @@
+name: release
+
+# Tagging vX.Y.Z builds the universal macOS dmg, publishes the GitHub release and
+# attaches an `eave.rb` cask generated from the real dmg checksum. Copy that file
+# into abcdlsj/homebrew-tap's Casks/ so `brew install --cask abcdlsj/tap/eave`
+# picks up the release.
+#
+# The tag must match MARKETING_VERSION in project.yml; the first job fails otherwise,
+# so a release never ships a build whose About window disagrees with its tag.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build and publish, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - id: version
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.tag || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          CONFIG="$(sed -n 's/.*MARKETING_VERSION: "\([^"]*\)".*/\1/p' project.yml | head -1)"
+          if [ "$VERSION" != "$CONFIG" ]; then
+            echo "::error::tag is v$VERSION but project.yml MARKETING_VERSION is $CONFIG"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  darwin:
+    needs: prepare
+    # macos-15 is Apple silicon, so one runner can build arm64, x86_64 and lipo
+    # them into the universal app the script ships.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - run: brew install xcodegen
+      - name: Build, sign and pack the dmg
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: scripts/package-release.sh "$VERSION"
+      - name: Checksums
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 "eave_${VERSION}_darwin_universal.dmg" "eave_${VERSION}_darwin_universal.zip" \
+            > SHA256SUMS-darwin.txt
+          cat SHA256SUMS-darwin.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, darwin]
+    runs-on: ubuntu-24.04
+    steps:
+      # Checkout first: it runs `git clean -ffdx`, which would delete the
+      # artifacts if they were downloaded before it.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          {
+            echo "Eave ${VERSION}"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "## Changes since ${PREV}"
+              echo
+              git log --no-merges --pretty='- %s' "${PREV}..${TAG}"
+            else
+              echo "## Changes"
+              echo
+              git log --no-merges --pretty='- %s' "${TAG}"
+            fi
+            echo
+            echo "## Assets"
+            echo
+            echo "| File | Notes |"
+            echo "| --- | --- |"
+            echo "| \`eave_${VERSION}_darwin_universal.dmg\` | Universal (Apple silicon + Intel), macOS 15+. |"
+            echo "| \`eave_${VERSION}_darwin_universal.zip\` | Same app, zipped, for scripted installs. |"
+            echo
+            echo "## Install"
+            echo
+            echo '```sh'
+            echo "brew install --cask abcdlsj/tap/eave"
+            echo '```'
+            echo
+            echo "The dmg is ad-hoc signed and not notarised. Homebrew installs carry no quarantine"
+            echo "attribute and launch normally; a browser download needs right-click → Open, or"
+            echo "\`xattr -dr com.apple.quarantine /Applications/Eave.app\`."
+            echo
+            echo "## First run"
+            echo
+            echo "Eave lives in the menu bar and has no Dock icon. Give it Accessibility access in"
+            echo "System Settings → Privacy & Security → Accessibility, otherwise it cannot move or"
+            echo "click other apps' menu bar items."
+          } > NOTES.md
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: >-
+          gh release create "${{ inputs.tag || github.ref_name }}"
+          dist/*.dmg dist/*.zip dist/SHA256SUMS-darwin.txt
+          --repo "$GITHUB_REPOSITORY"
+          --title "Eave ${VERSION}"
+          --notes-file NOTES.md
+
+      # The cask pins the dmg, so it can only be written once that file exists:
+      # generate it from the release asset itself instead of a transcription.
+      - name: Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          scripts/write-cask.sh "$VERSION" "dist/eave_${VERSION}_darwin_universal.dmg"
+          gh release upload "${{ inputs.tag || github.ref_name }}" dist/eave.rb \
+            --repo "$GITHUB_REPOSITORY" --clobber

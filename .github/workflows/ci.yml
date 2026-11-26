@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      # Eave.xcodeproj is generated from project.yml and committed, so a stale
+      # project would build something the source no longer describes.
+      - name: Fail when Eave.xcodeproj is out of date
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          git diff --exit-code -- Eave.xcodeproj
+      - name: Build and test
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project Eave.xcodeproj \
+            -scheme Eave \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/ci \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
