@@ -328,15 +328,15 @@ private struct NotchAmbientWingsView: View {
     @ViewBuilder
     private var rightWing: some View {
         if let badge = primary?.badge, !badge.isEmpty {
+            let fontSize: CGFloat = badge.count <= 2 ? 12.0 : 10.5
+            let isAccented = primary?.accentHex != nil || primary?.source == .dockBadge
             Text(badge)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .monospacedDigit()
+                .font(EaveTypography.badgeFont(size: fontSize, weight: "Fredoka-Regular"))
+                .tracking(0.2)
                 .contentTransition(.numericText())
-                .foregroundStyle(
-                    (primary?.accentHex != nil || primary?.source == .dockBadge)
-                        ? accentColor
-                        : .white.opacity(isHovered ? 0.98 : 0.78)
-                )
+                .foregroundStyle(isAccented ? accentColor : .white.opacity(isHovered ? 0.96 : 0.84))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         } else if primary?.style == .wave {
             NotchWaveBarsView(color: accentColor)
                 .scaleEffect(isHovered ? 1.12 : 1.0)

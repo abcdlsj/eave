@@ -1,5 +1,27 @@
 import AppKit
+import CoreText
 import SwiftUI
+
+// MARK: - Bundled Display Typography (Fredoka)
+
+enum EaveTypography {
+    private static let isFredokaLoaded: Bool = {
+        let url = Bundle.main.url(forResource: "Fredoka", withExtension: "ttf", subdirectory: "Fonts")
+            ?? Bundle.main.url(forResource: "Fredoka", withExtension: "ttf")
+        guard let url else { return false }
+        var error: Unmanaged<CFError>?
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+        return NSFont(name: "Fredoka-SemiBold", size: 12) != nil
+    }()
+
+    /// Soft geometric rounded numeral font (Fredoka) for Notch & Second-Row badge counters.
+    static func badgeFont(size: CGFloat, weight: String = "Fredoka-Regular") -> Font {
+        if isFredokaLoaded, NSFont(name: weight, size: size) != nil {
+            return .custom(weight, size: size)
+        }
+        return .system(size: size, weight: weight.contains("Regular") ? .regular : .semibold, design: .rounded)
+    }
+}
 
 // MARK: - Appearance Mapping
 

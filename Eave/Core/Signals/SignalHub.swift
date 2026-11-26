@@ -125,26 +125,9 @@ final class SignalHub {
     ) {
         activeBadgesByBundleID = currentSnapshots.mapValues(\.badge)
 
-        for clearedID in diff.clearedBundleIDs {
-            stateMachine.removeAmbient(id: "dock.\(clearedID)")
-        }
+        guard settings.enableNotchPeek, let latest = diff.newlyTriggered.last else { return }
 
-        guard settings.enableNotchPeek else { return }
-
-        let watched = effectiveWatchedBundleIDs()
-        for (bundleID, snap) in currentSnapshots where watched.contains(bundleID) {
-            stateMachine.upsertAmbient(
-                AmbientIndicator(
-                    id: "dock.\(bundleID)",
-                    source: .dockBadge,
-                    badge: snap.badge,
-                    accentHex: "#FF453A",
-                    bundleIdentifier: bundleID
-                )
-            )
-        }
-
-        guard let latest = diff.newlyTriggered.last else { return }
+        // Transient peek only (retracts cleanly after peekDurationSeconds — never stays glued to the notch).
         let alert = NotchAlert(
             id: "dock.\(latest.bundleIdentifier).\(latest.badge)",
             source: .dockBadge,

@@ -983,11 +983,8 @@ private struct NotchSettingsTab: View {
 
                     if settings.enableNotchPeek {
                         Text("3")
-                            .font(.system(size: 8.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.92))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.white.opacity(0.15)))
+                            .font(EaveTypography.badgeFont(size: 11.0, weight: "Fredoka-Regular"))
+                            .foregroundStyle(Color(red: 1.0, green: 0.34, blue: 0.30))
                             .frame(width: 28)
                             .transition(.opacity)
                     }

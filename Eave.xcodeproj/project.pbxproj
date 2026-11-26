@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		024BB1B6C0EB40B162D3813A /* EaveCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1589FF8D385A8011AB08A5FA /* EaveCoreTests.swift */; };
 		0AB787FDFE6DFF024AC059F2 /* MenuBarItemScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197B80E0F48811FECFDC63E1 /* MenuBarItemScanner.swift */; };
+		100F7332AC94EA6071A22E38 /* Fredoka.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DC612955142024059A026A28 /* Fredoka.ttf */; };
 		1B0E4CE42F1B41FAA325D606 /* HotKeyRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5D47B03CA7EDB9ED825FB72 /* HotKeyRecorderView.swift */; };
 		22A64680ED51B7BDE59DBBFC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30548DE88F127CF1C9E0BC0 /* SettingsView.swift */; };
 		26F3D5A23A588EA57A189ACE /* PermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1F1D2A14C1838E3C770F5B /* PermissionsManager.swift */; };
@@ -82,6 +83,7 @@
 		D1774C6F7E8BF81B85E23190 /* EaveDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EaveDesignSystem.swift; sourceTree = "<group>"; };
 		D35FFFA469ED667D5EBC389B /* NotchPeekView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPeekView.swift; sourceTree = "<group>"; };
 		D5D47B03CA7EDB9ED825FB72 /* HotKeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyRecorderView.swift; sourceTree = "<group>"; };
+		DC612955142024059A026A28 /* Fredoka.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Fredoka.ttf; sourceTree = "<group>"; };
 		DCB9F9CFED0A91AC144F8A2B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DEA5CE1E7FB213AEE39F8065 /* NotchShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchShape.swift; sourceTree = "<group>"; };
 		E30548DE88F127CF1C9E0BC0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -171,6 +173,14 @@
 			path = Core;
 			sourceTree = "<group>";
 		};
+		6B1A1C474A155433734DE096 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				DC612955142024059A026A28 /* Fredoka.ttf */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
 		6E2CD31744473873BC6B5CCE /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -235,6 +245,7 @@
 				C554A4BC82A054F7C34D43F7 /* Assets.xcassets */,
 				A8A3D16434A76D2B76DC175B /* Eave.entitlements */,
 				DCB9F9CFED0A91AC144F8A2B /* Info.plist */,
+				6B1A1C474A155433734DE096 /* Fonts */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -351,6 +362,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CD57C810A917465183E4F3C7 /* Assets.xcassets in Resources */,
+				100F7332AC94EA6071A22E38 /* Fredoka.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

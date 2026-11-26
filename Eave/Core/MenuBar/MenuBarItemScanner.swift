@@ -263,6 +263,14 @@ final class MenuBarItemScanner {
         ).items
     }
 
+    /// Per-display Eave hidden separator coordinates in CoreGraphics top-left global space.
+    struct BandSeparator: Equatable, Sendable {
+        let minY: CGFloat
+        let height: CGFloat
+        let hiddenMaxX: CGFloat
+        let isCollapsed: Bool
+    }
+
     private nonisolated static func performBackgroundScan(
         runningApps: [RunningAppSnapshot],
         axCandidates: [RunningAppSnapshot],
@@ -273,18 +281,23 @@ final class MenuBarItemScanner {
         ownBundleID: String,
         axTrusted: Bool
     ) -> (items: [MenuBarItemInfo], discoveredAXPIDs: Set<pid_t>) {
+        let rawWindows = fetchRawStatusWindows()
+        let bandSeparators = extractBandSeparators(from: rawWindows, ownBundleID: ownBundleID)
+
         var discovered: [MenuBarItemInfo] = []
         var axPIDs = Set<pid_t>()
 
         if axTrusted && !axCandidates.isEmpty {
             discovered = scanAccessibilityExtrasParallel(
                 runningApps: axCandidates,
-                hiddenSeparatorX: hiddenSeparatorX
+                hiddenSeparatorX: hiddenSeparatorX,
+                bandSeparators: bandSeparators
             )
             axPIDs = Set(discovered.map(\.pid))
         }
 
-        let windowItems = scanWindowList(
+        let windowItems = parseStatusWindows(
+            rawWindows,
             runningApps: runningApps,
             menuBarHeight: menuBarHeight,
             hiddenSeparatorX: hiddenSeparatorX,
@@ -348,70 +361,26 @@ final class MenuBarItemScanner {
         return rawWindows
     }
 
-    private nonisolated static func scanWindowList(
-        runningApps: [RunningAppSnapshot],
-        menuBarHeight: CGFloat,
-        hiddenSeparatorX: CGFloat?,
-        excludingWindowIDs: Set<CGWindowID>,
-        ownPID: pid_t,
-        ownBundleID: String
-    ) -> [MenuBarItemInfo] {
-        let rawWindows = fetchRawStatusWindows()
-        return parseStatusWindows(
-            rawWindows,
-            runningApps: runningApps,
-            menuBarHeight: menuBarHeight,
-            hiddenSeparatorX: hiddenSeparatorX,
-            excludingWindowIDs: excludingWindowIDs,
-            ownPID: ownPID,
-            ownBundleID: ownBundleID
-        )
-    }
-
-    /// Pure parser handling both classic third-party status windows AND macOS 26 Tahoe's
-    /// Control Center proxy status windows (where `ownerName == "Control Center"` and `windowName`
-    /// carries the owning app's bundle identifier).
-    nonisolated static func parseStatusWindows(
-        _ rawWindows: [RawStatusWindow],
-        runningApps: [RunningAppSnapshot],
-        menuBarHeight: CGFloat,
-        hiddenSeparatorX: CGFloat?,
-        excludingWindowIDs: Set<CGWindowID>,
-        ownPID: pid_t,
+    /// Extracts per-display Eave hidden separator coordinates from Control Center proxy windows so
+    /// both Track 1 (CGWindowList) and Track 2 (AXExtrasMenuBar) classify each item against its own display's separator.
+    nonisolated static func extractBandSeparators(
+        from rawWindows: [RawStatusWindow],
         ownBundleID: String = "com.abcdlsj.eave"
-    ) -> [MenuBarItemInfo] {
-        let appByPID = Dictionary(uniqueKeysWithValues: runningApps.map { ($0.pid, $0) })
-        var appByBundleID: [String: RunningAppSnapshot] = [:]
-        for app in runningApps {
-            if let bid = app.bundleIdentifier?.lowercased(), !bid.isEmpty {
-                appByBundleID[bid] = app
-            }
-        }
-
-        let maxBarY = max(menuBarHeight + 10, 46)
+    ) -> [BandSeparator] {
         let lowerOwnBundle = ownBundleID.lowercased()
-
-        // Collect per-display-band Eave separator bounds from Control Center proxy windows so
-        // multi-monitor proxy items are classified against their own display's separator.
-        struct BandSeparator {
-            let minY: CGFloat
-            let height: CGFloat
-            let hiddenMaxX: CGFloat
-            let isCollapsed: Bool
-        }
-
         var bandSeparators: [BandSeparator] = []
         var eaveBandWindows: [(minY: CGFloat, height: CGFloat, bounds: CGRect, name: String)] = []
+
         for win in rawWindows {
             let lowerOwner = win.ownerName.lowercased()
             guard lowerOwner == "control center" else { continue }
+            guard !(win.bounds.minX == 0 && win.bounds.minY == 0) else { continue }
             let lowerName = win.windowName.lowercased()
             if lowerName == "eave.control.hidden" || lowerName == lowerOwnBundle {
                 eaveBandWindows.append((win.bounds.minY, win.bounds.height, win.bounds, lowerName))
             }
         }
 
-        // Group Eave proxy windows by (minY, height) band.
         for candidate in eaveBandWindows {
             if candidate.name == "eave.control.hidden" || candidate.bounds.width >= 200 {
                 bandSeparators.append(
@@ -425,7 +394,7 @@ final class MenuBarItemScanner {
             }
         }
 
-        // When expanded, Eave's hidden separator on secondary displays is a small (<= 30pt) window
+        // When expanded, Eave's hidden separator on secondary displays is a small (< 200pt) window
         // named with `ownBundleID` to the left of Eave's toggle item on the same display band.
         for candidate in eaveBandWindows where candidate.name == lowerOwnBundle && candidate.bounds.width < 200 {
             let hasBandSep = bandSeparators.contains {
@@ -450,10 +419,69 @@ final class MenuBarItemScanner {
             }
         }
 
+        return bandSeparators
+    }
+
+    /// Resolves the separator X coordinate for an item frame across multi-monitor coordinate spaces.
+    nonisolated static func resolveSeparatorX(
+        for frame: CGRect,
+        bandSeparators: [BandSeparator],
+        fallbackHiddenSeparatorX: CGFloat?
+    ) -> CGFloat? {
+        // 1. Exact vertical menu-bar band match (CG top-left coordinates).
+        if let exact = bandSeparators.first(where: {
+            abs($0.minY - frame.minY) <= 8 && abs($0.height - frame.height) <= 10
+        }) {
+            return exact.hiddenMaxX
+        }
+        // 2. Vertical band match by minY alone (AX items sometimes report inner button height slightly smaller than bar height).
+        if let byY = bandSeparators.first(where: { abs($0.minY - frame.minY) <= 10 }) {
+            return byY.hiddenMaxX
+        }
+        // 3. Fallback only when frame lies on the primary display band (minY near 0); never compare a left-side
+        //    secondary monitor's negative X coordinate against the primary display's positive separator X.
+        if abs(frame.minY) <= 12 {
+            return fallbackHiddenSeparatorX
+        }
+        return nil
+    }
+
+    /// Pure parser handling both classic third-party status windows AND macOS 26 Tahoe's
+    /// Control Center proxy status windows (where `ownerName == "Control Center"` and `windowName`
+    /// carries the owning app's bundle identifier).
+    nonisolated static func parseStatusWindows(
+        _ rawWindows: [RawStatusWindow],
+        runningApps: [RunningAppSnapshot],
+        menuBarHeight: CGFloat,
+        hiddenSeparatorX: CGFloat?,
+        excludingWindowIDs: Set<CGWindowID>,
+        ownPID: pid_t,
+        ownBundleID: String = "com.abcdlsj.eave"
+    ) -> [MenuBarItemInfo] {
+        let appByPID = Dictionary(uniqueKeysWithValues: runningApps.map { ($0.pid, $0) })
+        var appByBundleID: [String: RunningAppSnapshot] = [:]
+        for app in runningApps {
+            if let bid = app.bundleIdentifier?.lowercased(), !bid.isEmpty {
+                appByBundleID[bid] = app
+            }
+        }
+
+        let maxBarY = max(menuBarHeight + 10, 46)
+        let lowerOwnBundle = ownBundleID.lowercased()
+        let bandSeparators = extractBandSeparators(from: rawWindows, ownBundleID: ownBundleID)
+
+        // Prioritize on-screen proxy windows first so multi-monitor deduplication picks the active display copy.
+        let orderedWindows = rawWindows.sorted { lhs, rhs in
+            if lhs.isOnScreen != rhs.isOnScreen {
+                return lhs.isOnScreen && !rhs.isOnScreen
+            }
+            return abs(lhs.bounds.minY) < abs(rhs.bounds.minY)
+        }
+
         var results: [MenuBarItemInfo] = []
         var seenProxyBundles = Set<String>()
 
-        for win in rawWindows {
+        for win in orderedWindows {
             guard !excludingWindowIDs.contains(win.windowID) else { continue }
             let bounds = win.bounds
             guard bounds.width >= 4, bounds.width <= 320,
@@ -474,30 +502,23 @@ final class MenuBarItemScanner {
                     continue
                 }
 
-                // Deduplicate multi-monitor proxy copies of the same app (preferring bands closest to y == 0).
                 guard seenProxyBundles.insert(lowerName).inserted else { continue }
 
-                let matchedSep = bandSeparators.first {
-                    abs($0.minY - bounds.minY) <= 4 && abs($0.height - bounds.height) <= 4
-                }
-
+                let sepX = resolveSeparatorX(
+                    for: bounds,
+                    bandSeparators: bandSeparators,
+                    fallbackHiddenSeparatorX: hiddenSeparatorX
+                )
                 let section: MenuBarSection
-                if let sep = matchedSep {
-                    if sep.isCollapsed && !win.isOnScreen {
-                        section = .hidden
-                    } else {
-                        section = MenuBarSearchEngine.classifySection(
-                            itemMidX: bounds.midX,
-                            hiddenSeparatorX: sep.hiddenMaxX
-                        )
-                    }
+                if let sepX {
+                    section = MenuBarSearchEngine.classifySection(
+                        itemMidX: bounds.midX,
+                        hiddenSeparatorX: sepX
+                    )
                 } else if !win.isOnScreen {
                     section = .hidden
                 } else {
-                    section = MenuBarSearchEngine.classifySection(
-                        itemMidX: bounds.midX,
-                        hiddenSeparatorX: hiddenSeparatorX
-                    )
+                    section = .visible
                 }
 
                 results.append(
@@ -574,7 +595,8 @@ final class MenuBarItemScanner {
 
     private nonisolated static func scanAccessibilityExtrasParallel(
         runningApps: [RunningAppSnapshot],
-        hiddenSeparatorX: CGFloat?
+        hiddenSeparatorX: CGFloat?,
+        bandSeparators: [BandSeparator]
     ) -> [MenuBarItemInfo] {
         let collector = LockedItemCollector()
         DispatchQueue.concurrentPerform(iterations: runningApps.count) { idx in
@@ -606,9 +628,14 @@ final class MenuBarItemScanner {
                     ?? axString(item, kAXDescriptionAttribute)
                     ?? ""
 
+                let sepX = resolveSeparatorX(
+                    for: frame,
+                    bandSeparators: bandSeparators,
+                    fallbackHiddenSeparatorX: hiddenSeparatorX
+                )
                 let section = MenuBarSearchEngine.classifySection(
                     itemMidX: frame.midX,
-                    hiddenSeparatorX: hiddenSeparatorX
+                    hiddenSeparatorX: sepX
                 )
 
                 appItems.append(

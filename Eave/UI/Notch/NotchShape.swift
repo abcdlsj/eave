@@ -38,7 +38,7 @@ struct NotchSurfaceMetrics: Equatable {
             )
         case .peek:
             return NotchSurfaceMetrics(
-                width: baseW + 84,
+                width: baseW + 92,
                 height: baseH,
                 topRadius: 9,
                 bottomRadius: 13.5,

@@ -360,6 +360,51 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(byBundle["com.kyome.RunCat"]?.section, .visible)
     }
 
+    func testMultiMonitorNegativeXVisibleItemNotMisclassifiedAsHidden() {
+        // Reproduces primary MacBook (0..1512, y=0) + external monitor on the left (-1920..0, y=-719).
+        let apps: [MenuBarItemScanner.RunningAppSnapshot] = [
+            .init(pid: 201, bundleIdentifier: "com.tencent.WeWorkMac", appName: "WeCom"),
+            .init(pid: 202, bundleIdentifier: "com.tencent.xinWeChat", appName: "WeChat")
+        ]
+
+        let windows: [MenuBarItemScanner.RawStatusWindow] = [
+            // Left external monitor Eave separator: maxX = -462
+            .init(windowID: 1, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: -5466, y: -719, width: 5004, height: 30), isOnScreen: false),
+            // Primary monitor Eave separator: maxX = 1052
+            .init(windowID: 2, pid: 50, ownerName: "Control Center", windowName: "eave.control.hidden", bounds: CGRect(x: -3952, y: 0, width: 5004, height: 33), isOnScreen: false),
+            // WeCom is VISIBLE on both monitors (midX = -299.5 > -462 on left monitor; midX = 1215.5 > 1052 on primary)
+            .init(windowID: 3, pid: 50, ownerName: "Control Center", windowName: "com.tencent.WeWorkMac", bounds: CGRect(x: -330, y: -719, width: 61, height: 30), isOnScreen: true),
+            .init(windowID: 4, pid: 50, ownerName: "Control Center", windowName: "com.tencent.WeWorkMac", bounds: CGRect(x: 1185, y: 0, width: 61, height: 33), isOnScreen: false),
+            // WeChat is HIDDEN on left monitor (midX = -5502 < -462)
+            .init(windowID: 5, pid: 50, ownerName: "Control Center", windowName: "com.tencent.xinWeChat", bounds: CGRect(x: -5515, y: -719, width: 26, height: 30), isOnScreen: false)
+        ]
+
+        let bandSeps = MenuBarItemScanner.extractBandSeparators(from: windows, ownBundleID: "com.abcdlsj.eave")
+        XCTAssertEqual(bandSeps.count, 2)
+
+        // AX item reported on the left external display (negative X) must match the left display's separator (-462), NOT primary (1052).
+        let axWeComFrame = CGRect(x: -330, y: -719, width: 61, height: 24)
+        let resolvedSepX = MenuBarItemScanner.resolveSeparatorX(for: axWeComFrame, bandSeparators: bandSeps, fallbackHiddenSeparatorX: 1052)
+        XCTAssertEqual(resolvedSepX, -462)
+        XCTAssertEqual(MenuBarSearchEngine.classifySection(itemMidX: axWeComFrame.midX, hiddenSeparatorX: resolvedSepX), .visible)
+
+        // Proxy window parsing must also keep WeCom visible and WeChat hidden.
+        let parsed = MenuBarItemScanner.parseStatusWindows(
+            windows,
+            runningApps: apps,
+            menuBarHeight: 33,
+            hiddenSeparatorX: 1052,
+            excludingWindowIDs: [],
+            ownPID: 999,
+            ownBundleID: "com.abcdlsj.eave"
+        )
+        let byBundle = Dictionary(uniqueKeysWithValues: parsed.compactMap { item in
+            item.bundleIdentifier.map { ($0, item) }
+        })
+        XCTAssertEqual(byBundle["com.tencent.WeWorkMac"]?.section, .visible)
+        XCTAssertEqual(byBundle["com.tencent.xinWeChat"]?.section, .hidden)
+    }
+
     // MARK: - EaveSettings Persistence Tests
 
     @MainActor

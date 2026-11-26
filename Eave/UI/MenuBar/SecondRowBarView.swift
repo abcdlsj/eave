@@ -403,10 +403,9 @@ private struct SecondRowItemTile: View {
 
                     if let badge, !badge.isEmpty {
                         Text(badge)
-                            .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                            .monospacedDigit()
+                            .font(EaveTypography.badgeFont(size: 9.0, weight: "Fredoka-Medium"))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, 4.5)
                             .padding(.vertical, 1)
                             .background(
                                 Capsule()

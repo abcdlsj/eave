@@ -38,13 +38,13 @@ struct NotchPeekView: View {
         Button(action: onPrimaryAction) {
             HStack(spacing: 0) {
                 leftIconWing
-                    .frame(width: 34, height: notchHeight)
+                    .frame(width: 38, height: notchHeight)
 
                 Spacer(minLength: 0)
                     .frame(width: max(notchWidth - 4, 124))
 
                 rightSignalWing
-                    .frame(width: 34, height: notchHeight)
+                    .frame(width: 38, height: notchHeight)
             }
             .padding(.horizontal, 6)
             .contentShape(Rectangle())
@@ -117,22 +117,15 @@ struct NotchPeekView: View {
     @ViewBuilder
     private var rightSignalWing: some View {
         if let badge = alert.badge, !badge.isEmpty {
+            let fontSize: CGFloat = badge.count <= 2 ? 13.0 : 11.5
+            let isAccented = alert.accentHex != nil || alert.source == .dockBadge
             Text(badge)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .monospacedDigit()
+                .font(EaveTypography.badgeFont(size: fontSize, weight: "Fredoka-Regular"))
+                .tracking(0.2)
                 .contentTransition(.numericText())
-                .foregroundStyle(.white.opacity(0.96))
+                .foregroundStyle(isAccented ? accentColor : .white.opacity(0.92))
                 .lineLimit(1)
-                .padding(.horizontal, 5.5)
-                .padding(.vertical, 1.5)
-                .background(
-                    Capsule()
-                        .fill(
-                            (alert.accentHex != nil || alert.source == .dockBadge)
-                                ? accentColor.opacity(0.92)
-                                : Color.white.opacity(0.16)
-                        )
-                )
+                .minimumScaleFactor(0.85)
         } else if alert.style == .wave {
             NotchWaveBarsView(color: accentColor)
                 .scaleEffect(isHovered ? 1.12 : 1.0)

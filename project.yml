@@ -26,9 +26,11 @@ targets:
           - "**/*.md"
     resources:
       - path: Eave/Resources/Assets.xcassets
+      - path: Eave/Resources/Fonts
     info:
       path: Eave/Resources/Info.plist
       properties:
+        ATSApplicationFontsPath: Fonts
         CFBundleDisplayName: Eave
         CFBundleName: Eave
         CFBundleIdentifier: com.abcdlsj.eave
