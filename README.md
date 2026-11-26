@@ -6,6 +6,10 @@ A restrained, native macOS menu bar manager with textless Notch signals — buil
 - **Architecture & Design**: See [docs/DESIGN.md](docs/DESIGN.md).
 
 <p align="center">
+  <img src="docs/assets/second-row.png" alt="Eave Floating Second-Row Bar" width="680" />
+</p>
+
+<p align="center">
   <img src="docs/assets/notch-showcase.png" alt="Eave NotchBridge Signals" width="680" />
 </p>
 
