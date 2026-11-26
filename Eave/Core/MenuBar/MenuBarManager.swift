@@ -468,6 +468,8 @@ final class MenuBarManager: NSObject {
     // MARK: - Actions & Context Menu
 
     @objc private func handleToggleClick(_ sender: NSStatusBarButton) {
+        // performClick in presentContextMenu must open the attached menu; never re-enter.
+        guard !isContextMenuOpen else { return }
         onWillHandleToggleInteraction?()
 
         guard let event = NSApp.currentEvent else {
@@ -508,9 +510,9 @@ final class MenuBarManager: NSObject {
 
         let toggleTitle = isHiddenExpanded ? "Hide Hidden Items" : "Show Hidden Items"
         let toggleSymbol = isHiddenExpanded ? "eye.slash" : "eye"
-        let toggleItem = makeItem(title: toggleTitle, symbol: toggleSymbol, action: #selector(menuToggleHidden))
-        Self.applyShortcutHint(settings.hotKey(for: .toggleHidden), to: toggleItem)
-        menu.addItem(toggleItem)
+        let toggleMenuItem = makeItem(title: toggleTitle, symbol: toggleSymbol, action: #selector(menuToggleHidden))
+        Self.applyShortcutHint(settings.hotKey(for: .toggleHidden), to: toggleMenuItem)
+        menu.addItem(toggleMenuItem)
         let searchItem = makeItem(title: "Search Menu Bar…", symbol: "magnifyingglass", action: #selector(menuOpenSearch))
         Self.applyShortcutHint(settings.hotKey(for: .openSearch), to: searchItem)
         menu.addItem(searchItem)
