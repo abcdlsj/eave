@@ -29,8 +29,16 @@ struct SettingsView: View {
         }
     }
 
-    private static var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    /// Marketing version for tagged builds ("0.2.0"); local builds past a tag show the exact
+    /// `git describe` revision ("0.2.0-23-g1a2b3c4") so testers know what they're running.
+    static var appVersion: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "—"
+        let revision = (info["EaveBuildRevision"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !revision.isEmpty else { return version }
+        let trimmed = revision.hasPrefix("v") ? String(revision.dropFirst()) : revision
+        if trimmed == version { return version }
+        return trimmed.hasPrefix(version) ? trimmed : "\(version) (\(trimmed))"
     }
 
     private var effectiveColorScheme: ColorScheme {

@@ -33,6 +33,7 @@ echo "==> Generating Eave.xcodeproj from project.yml"
 xcodegen generate
 
 echo "==> Building Eave ${VERSION} (${BUILD_NUMBER}) universal release"
+BUILD_REVISION="$(git describe --tags --always --dirty 2>/dev/null || true)"
 xcodebuild build \
     -project Eave.xcodeproj \
     -scheme Eave \
@@ -44,6 +45,7 @@ xcodebuild build \
     MARKETING_VERSION="$VERSION" \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     CODE_SIGNING_ALLOWED=NO \
+    EAVE_BUILD_REVISION="$BUILD_REVISION" \
     -quiet
 
 APP="${DERIVED_DATA}/Build/Products/Release/Eave.app"

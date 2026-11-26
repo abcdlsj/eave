@@ -33,6 +33,7 @@ else
     echo "==> Using stable signing identity: ${SIGN_IDENTITY}"
 fi
 
+BUILD_REVISION="$(git describe --tags --always --dirty 2>/dev/null || true)"
 xcodebuild build \
     -project Eave.xcodeproj \
     -scheme Eave \
@@ -41,6 +42,7 @@ xcodebuild build \
     -derivedDataPath build \
     CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY="-" \
+    EAVE_BUILD_REVISION="$BUILD_REVISION" \
     -quiet
 
 echo "==> Signing ${BUILT_APP}..."
