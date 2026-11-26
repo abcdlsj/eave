@@ -64,10 +64,16 @@ final class SecondRowBarPanel: NSPanel {
 @Observable
 final class SecondRowBarController {
     private static let dismissGraceSeconds: TimeInterval = 0.28
+    private static let fadeInSeconds: TimeInterval = 0.14
+    private static let fadeOutSeconds: TimeInterval = 0.22
+    /// Pointer sampling interval while the card is visible. The global mouse-moved monitor is
+    /// coalesced to ~30Hz and drops trailing events, and never fires while the pointer is over
+    /// Eave's own windows, so a quick flick out of the card could leave it open indefinitely.
+    private static let pointerPollSeconds: TimeInterval = 1.0 / 15.0
 
     private var panel: SecondRowBarPanel?
     private var dismissTimer: Timer?
-    private var hideOrderOutTask: Task<Void, Never>?
+    private var pointerPollTimer: Timer?
     private var escapeKeyMonitor: Any?
     private var localEscapeKeyMonitor: Any?
     private var appSwitchObserver: Any?
@@ -115,8 +121,7 @@ final class SecondRowBarController {
     func tearDown() {
         dismissTimer?.invalidate()
         dismissTimer = nil
-        hideOrderOutTask?.cancel()
-        hideOrderOutTask = nil
+        stopPointerPolling()
         removeEscapeMonitor()
         if let observer = appSwitchObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -148,8 +153,6 @@ final class SecondRowBarController {
         needsAccessibilityPermission: Bool = false,
         pinnedForPreview: Bool = false
     ) {
-        hideOrderOutTask?.cancel()
-        hideOrderOutTask = nil
         dismissTimer?.invalidate()
         dismissTimer = nil
         presentationGeneration &+= 1
@@ -176,12 +179,14 @@ final class SecondRowBarController {
         let wasVisible = isVisible
         isVisible = true
         installEscapeMonitorIfNeeded()
+        startPointerPolling()
 
         if !wasVisible {
-            hostPanel.alphaValue = 0
+            // Resume from the current alpha so re-showing mid fade-out doesn't flash.
+            if !hostPanel.isVisible { hostPanel.alphaValue = 0 }
             hostPanel.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.14
+                ctx.duration = Self.fadeInSeconds
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 hostPanel.animator().alphaValue = 1
             }
@@ -267,6 +272,7 @@ final class SecondRowBarController {
         guard isVisible else { return }
         dismissTimer?.invalidate()
         dismissTimer = nil
+        stopPointerPolling()
         removeEscapeMonitor()
         isPinnedForPreview = false
 
@@ -274,20 +280,18 @@ final class SecondRowBarController {
         presentationGeneration = generation
         isVisible = false
 
-        if let panel {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.11
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                panel.animator().alphaValue = 0
+        guard let panel else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = Self.fadeOutSeconds
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                // A show() during the fade bumps the generation; keep the panel on screen then.
+                guard let self, self.presentationGeneration == generation else { return }
+                self.panel?.orderOut(nil)
             }
-        }
-
-        hideOrderOutTask?.cancel()
-        hideOrderOutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard let self, !Task.isCancelled, self.presentationGeneration == generation else { return }
-            self.panel?.orderOut(nil)
-        }
+        })
     }
 
     // MARK: - Private
@@ -347,6 +351,23 @@ final class SecondRowBarController {
             }
         }
         return NotchGeometryResolver.preferredScreen() ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private func startPointerPolling() {
+        guard pointerPollTimer == nil else { return }
+        let timer = Timer(timeInterval: Self.pointerPollSeconds, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isVisible else { return }
+                self.handleGlobalPointerMove(to: NSEvent.mouseLocation, anchorFrame: nil)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pointerPollTimer = timer
+    }
+
+    private func stopPointerPolling() {
+        pointerPollTimer?.invalidate()
+        pointerPollTimer = nil
     }
 
     private func installEscapeMonitorIfNeeded() {
