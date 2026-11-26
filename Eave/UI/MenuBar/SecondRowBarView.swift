@@ -203,8 +203,14 @@ struct SecondRowBarView: View {
         let col: Int
     }
 
+    private struct ScrollEdges: Equatable {
+        var canScrollLeading = false
+        var canScrollTrailing = false
+    }
+
     @State private var hoveredRowIndex: Int?
     @State private var hoveredGridPos: GridPosition?
+    @State private var scrollEdges = ScrollEdges()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var metrics: SecondRowLayoutMetrics {
@@ -310,6 +316,16 @@ struct SecondRowBarView: View {
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.vertical, metrics.verticalPadding)
             }
+            .onScrollGeometryChange(for: ScrollEdges.self) { geo in
+                let maxOffset = geo.contentSize.width - geo.containerSize.width
+                return ScrollEdges(
+                    canScrollLeading: geo.contentOffset.x > 1,
+                    canScrollTrailing: geo.contentOffset.x < maxOffset - 1
+                )
+            } action: { _, edges in
+                scrollEdges = edges
+            }
+            .mask(edgeFadeMask)
         } else {
             let axes: Axis.Set = metrics.isVerticallyScrollable ? [.horizontal, .vertical] : .horizontal
             ScrollView(axes, showsIndicators: false) {
@@ -317,6 +333,26 @@ struct SecondRowBarView: View {
                     .padding(.horizontal, metrics.horizontalPadding)
                     .padding(.vertical, metrics.verticalPadding)
             }
+        }
+    }
+
+    /// Soft fade on whichever edge has more icons beyond it, hinting that the row scrolls.
+    private var edgeFadeMask: some View {
+        let fadeWidth: CGFloat = 22
+        return HStack(spacing: 0) {
+            LinearGradient(
+                colors: [.black.opacity(scrollEdges.canScrollLeading ? 0.0 : 1.0), .black],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: fadeWidth)
+            Rectangle().fill(Color.black)
+            LinearGradient(
+                colors: [.black, .black.opacity(scrollEdges.canScrollTrailing ? 0.0 : 1.0)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: fadeWidth)
         }
     }
 

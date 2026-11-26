@@ -9,6 +9,37 @@ final class SecondRowBarPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    /// When true (single-row horizontal layout), plain vertical mouse-wheel scrolling is remapped
+    /// to horizontal scrolling so overflowing icons are reachable without Shift or a trackpad.
+    var mapsVerticalScrollToHorizontal = false
+
+    override func sendEvent(_ event: NSEvent) {
+        if mapsVerticalScrollToHorizontal,
+           event.type == .scrollWheel,
+           abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX),
+           let mapped = Self.horizontalScrollEvent(from: event) {
+            super.sendEvent(mapped)
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    private static func horizontalScrollEvent(from event: NSEvent) -> NSEvent? {
+        guard let cgEvent = event.cgEvent?.copy() else { return nil }
+        let intFields: [(CGEventField, CGEventField)] = [
+            (.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2),
+            (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2)
+        ]
+        for (vertical, horizontal) in intFields {
+            cgEvent.setIntegerValueField(horizontal, value: cgEvent.getIntegerValueField(vertical))
+            cgEvent.setIntegerValueField(vertical, value: 0)
+        }
+        let fixed = cgEvent.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1)
+        cgEvent.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: fixed)
+        cgEvent.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        return NSEvent(cgEvent: cgEvent)
+    }
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -38,6 +69,7 @@ final class SecondRowBarController {
     private var dismissTimer: Timer?
     private var hideOrderOutTask: Task<Void, Never>?
     private var escapeKeyMonitor: Any?
+    private var localEscapeKeyMonitor: Any?
     private var appSwitchObserver: Any?
     private var presentationGeneration: UInt64 = 0
     private var lastAnchorFrame: CGRect?
@@ -136,6 +168,7 @@ final class SecondRowBarController {
 
         let targetFrame = computePanelFrame(anchorFrame: anchorFrame, screen: screen)
         let hostPanel = ensurePanel(initialFrame: targetFrame)
+        hostPanel.mapsVerticalScrollToHorizontal = layoutMode == .horizontalScroll
         if hostPanel.frame != targetFrame {
             hostPanel.setFrame(targetFrame, display: false)
         }
@@ -177,6 +210,7 @@ final class SecondRowBarController {
             self.lastAnchorFrame = anchorFrame
         }
 
+        panel?.mapsVerticalScrollToHorizontal = layoutMode == .horizontalScroll
         guard isVisible, let panel else { return }
         let screen = resolveScreen(for: self.lastAnchorFrame)
         self.maxContentWidth = resolvedMaxContentWidth(for: screen)
@@ -316,12 +350,27 @@ final class SecondRowBarController {
     }
 
     private func installEscapeMonitorIfNeeded() {
-        guard escapeKeyMonitor == nil else { return }
-        escapeKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Escape
-                MainActor.assumeIsolated {
-                    self?.hide()
+        // Global monitor: Escape while another app is frontmost (requires Accessibility).
+        if escapeKeyMonitor == nil {
+            escapeKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                if event.keyCode == 53 { // Escape
+                    MainActor.assumeIsolated {
+                        self?.hide()
+                    }
                 }
+            }
+        }
+        // Local monitor: Escape while one of Eave's own windows is key (e.g. Settings Preview),
+        // which the global monitor never sees.
+        if localEscapeKeyMonitor == nil {
+            localEscapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == 53 else { return event } // Escape
+                let handled = MainActor.assumeIsolated { () -> Bool in
+                    guard let self, self.isVisible else { return false }
+                    self.hide()
+                    return true
+                }
+                return handled ? nil : event
             }
         }
     }
@@ -330,6 +379,10 @@ final class SecondRowBarController {
         if let monitor = escapeKeyMonitor {
             NSEvent.removeMonitor(monitor)
             escapeKeyMonitor = nil
+        }
+        if let monitor = localEscapeKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEscapeKeyMonitor = nil
         }
     }
 }
