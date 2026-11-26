@@ -43,7 +43,7 @@ struct SecondRowLayoutMetrics: Equatable, Sendable {
                 visibleRows: 0,
                 isHorizontallyScrollable: false,
                 isVerticallyScrollable: false,
-                contentWidth: min(312, boundedMaxWidth),
+                contentWidth: min(420, boundedMaxWidth),
                 contentHeight: 46,
                 tileWidth: tileWidth,
                 tileHeight: tileHeight,
@@ -203,8 +203,15 @@ struct SecondRowBarView: View {
         let col: Int
     }
 
+    private struct ScrollEdges: Equatable {
+        var canScrollLeading = false
+        var canScrollTrailing = false
+    }
+
     @State private var hoveredRowIndex: Int?
     @State private var hoveredGridPos: GridPosition?
+    @State private var scrollEdges = ScrollEdges()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var metrics: SecondRowLayoutMetrics {
         SecondRowLayoutMetrics.resolve(
@@ -242,7 +249,6 @@ struct SecondRowBarView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Button("Grant") {
-                    EaveHaptics.tick()
                     controller.hide()
                     controller.onRequestPermissions?()
                 }
@@ -252,14 +258,32 @@ struct SecondRowBarView: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if controller.items.isEmpty {
-            HStack(spacing: 6) {
-                Text("Hold")
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nothing hidden yet")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+                    HStack(spacing: 4) {
+                        Text("Click the Eave icon to show the • divider, then")
+                        EaveKeycap(label: "⌘", fontSize: 9.5, horizontalPadding: 4.5, verticalPadding: 1.5)
+                        Text("-drag icons left of it.")
+                    }
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                EaveKeycap(label: "⌘", fontSize: 9.5, horizontalPadding: 4.5, verticalPadding: 1.5)
-                Text("and drag icons left of the dot to hide")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                }
+                .accessibilityElement(children: .combine)
+
+                Spacer(minLength: 0)
+
+                if let showDivider = controller.onRequestShowDivider {
+                    Button("Show Divider") {
+                        controller.hide()
+                        showDivider()
+                    }
+                    .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                }
             }
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -267,7 +291,7 @@ struct SecondRowBarView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: metrics.horizontalSpacing) {
                     ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, item in
-                        let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredRowIndex)
+                        let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredRowIndex, reduceMotion: reduceMotion)
                         SecondRowItemTile(
                             item: item,
                             badge: resolvedBadge(for: item),
@@ -282,7 +306,6 @@ struct SecondRowBarView: View {
                                 }
                             },
                             onSelect: { button in
-                                EaveHaptics.tick()
                                 controller.selectItem(item, button: button)
                             }
                         )
@@ -291,6 +314,16 @@ struct SecondRowBarView: View {
                 .padding(.horizontal, metrics.horizontalPadding)
                 .padding(.vertical, metrics.verticalPadding)
             }
+            .onScrollGeometryChange(for: ScrollEdges.self) { geo in
+                let maxOffset = geo.contentSize.width - geo.containerSize.width
+                return ScrollEdges(
+                    canScrollLeading: geo.contentOffset.x > 1,
+                    canScrollTrailing: geo.contentOffset.x < maxOffset - 1
+                )
+            } action: { _, edges in
+                scrollEdges = edges
+            }
+            .mask(edgeFadeMask)
         } else {
             let axes: Axis.Set = metrics.isVerticallyScrollable ? [.horizontal, .vertical] : .horizontal
             ScrollView(axes, showsIndicators: false) {
@@ -298,6 +331,26 @@ struct SecondRowBarView: View {
                     .padding(.horizontal, metrics.horizontalPadding)
                     .padding(.vertical, metrics.verticalPadding)
             }
+        }
+    }
+
+    /// Soft fade on whichever edge has more icons beyond it, hinting that the row scrolls.
+    private var edgeFadeMask: some View {
+        let fadeWidth: CGFloat = 22
+        return HStack(spacing: 0) {
+            LinearGradient(
+                colors: [.black.opacity(scrollEdges.canScrollLeading ? 0.0 : 1.0), .black],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: fadeWidth)
+            Rectangle().fill(Color.black)
+            LinearGradient(
+                colors: [.black, .black.opacity(scrollEdges.canScrollTrailing ? 0.0 : 1.0)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: fadeWidth)
         }
     }
 
@@ -309,7 +362,7 @@ struct SecondRowBarView: View {
                 HStack(spacing: metrics.horizontalSpacing) {
                     ForEach(Array(rowItems.enumerated()), id: \.element.id) { colIndex, item in
                         let pos = GridPosition(row: rowIndex, col: colIndex)
-                        let mag = EaveDockMagnification.resolve(index: colIndex, hoveredIndex: activeCol)
+                        let mag = EaveDockMagnification.resolve(index: colIndex, hoveredIndex: activeCol, reduceMotion: reduceMotion)
                         SecondRowItemTile(
                             item: item,
                             badge: resolvedBadge(for: item),
@@ -324,7 +377,6 @@ struct SecondRowBarView: View {
                                 }
                             },
                             onSelect: { button in
-                                EaveHaptics.tick()
                                 controller.selectItem(item, button: button)
                             }
                         )
@@ -350,12 +402,13 @@ struct SecondRowBarView: View {
 
 private struct SecondRowSkeletonView: View {
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(0..<5, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(pulse ? 0.12 : 0.05))
+                    .fill(Color.primary.opacity(reduceMotion ? 0.08 : (pulse ? 0.12 : 0.05)))
                     .frame(width: 28, height: 28)
                     .animation(
                         .easeInOut(duration: 0.9)
@@ -366,7 +419,7 @@ private struct SecondRowSkeletonView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { pulse = true }
+        .onAppear { if !reduceMotion { pulse = true } }
     }
 }
 
@@ -380,6 +433,7 @@ private struct SecondRowItemTile: View {
     let onSelect: (MenuBarClickButton) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isRightPressed = false
 
     private var hoverFillColor: Color {
@@ -409,7 +463,7 @@ private struct SecondRowItemTile: View {
                             .padding(.vertical, 1)
                             .background(
                                 Capsule()
-                                    .fill(Color(red: 1.0, green: 0.27, blue: 0.23))
+                                    .fill(Color.red)
                             )
                             .offset(x: 5, y: -3 + magnification.liftY)
                     }
@@ -417,8 +471,8 @@ private struct SecondRowItemTile: View {
                 .padding(.top, 2)
 
                 Text(item.appName)
-                    .font(.system(size: 9.5, weight: magnification.isPrimary ? .medium : .regular))
-                    .foregroundStyle(.primary.opacity(magnification.isPrimary ? 0.96 : 0.68))
+                    .font(.system(size: 10, weight: magnification.isPrimary ? .medium : .regular))
+                    .foregroundStyle(.primary.opacity(magnification.isPrimary || contrast == .increased ? 1.0 : 0.86))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: width - 6)
@@ -444,7 +498,9 @@ private struct SecondRowItemTile: View {
         .onHover { hovering in
             onHoverChanged(hovering)
         }
-        .accessibilityLabel(item.searchableText)
+        .accessibilityLabel(badge.map { "\(item.searchableText), \($0) new" } ?? item.searchableText)
+        .accessibilityHint("Double-tap to open. Use the actions menu for a right-click.")
+        .accessibilityAction(named: "Right-click") { onSelect(.right) }
     }
 
     @ViewBuilder

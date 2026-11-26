@@ -4,6 +4,7 @@ import SwiftUI
 /// Restrained, interactive 4-step first-launch walkthrough crafted in Eave's monochrome studio language.
 /// Introduces two-section menu bar hiding, hover reveal mode selection, optional Accessibility, and Notch signals.
 struct OnboardingView: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
     let onFinish: () -> Void
 
@@ -39,16 +40,18 @@ struct OnboardingView: View {
             }
         }
 
-        var subtitle: String {
+        func subtitle(hasPhysicalNotch: Bool) -> String {
             switch self {
             case .organize:
                 "Hold ⌘ and drag any menu bar icon to the left of Eave's dot divider to keep it out of sight."
             case .reveal:
-                "Hover over the Eave icon on any display to peek at hidden apps without disrupting your workflow."
+                "Hover over the Eave icon on any display to see hidden apps without disrupting your workflow."
             case .privacy:
                 "Core hiding needs zero permissions. Accessibility is optional, local-only, and Screen Recording is never requested."
             case .notch:
-                "When a hidden app gets a new Dock badge or CLI hook, Eave unfurls a single-line icon & indicator beside the camera."
+                hasPhysicalNotch
+                    ? "When a hidden app gets a new Dock badge or a script sends a signal, Eave shows a small icon and indicator beside the camera."
+                    : "When a hidden app gets a new Dock badge or a script sends a signal, Eave shows a small icon and indicator at the top center of your screen."
             }
         }
 
@@ -66,6 +69,10 @@ struct OnboardingView: View {
         coordinator.settings.appearanceMode.colorScheme ?? systemColorScheme
     }
 
+    private var hasPhysicalNotch: Bool {
+        NSScreen.screens.contains { $0.safeAreaInsets.top > 0 }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -75,14 +82,14 @@ struct OnboardingView: View {
 
             Rectangle()
                 .fill(EavePalette.divider(effectiveColorScheme))
-                .frame(height: 0.65)
+                .frame(height: hairline)
 
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(currentStep.title)
                         .font(.system(size: 19, weight: .semibold))
                         .tracking(-0.3)
-                    Text(currentStep.subtitle)
+                    Text(currentStep.subtitle(hasPhysicalNotch: hasPhysicalNotch))
                         .font(.system(size: 12.5))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -100,7 +107,7 @@ struct OnboardingView: View {
 
             Rectangle()
                 .fill(EavePalette.divider(effectiveColorScheme))
-                .frame(height: 0.65)
+                .frame(height: hairline)
 
             footerBar
                 .padding(.horizontal, 28)
@@ -150,7 +157,6 @@ struct OnboardingView: View {
                     let isPast = step.rawValue < currentStep.rawValue
                     Button {
                         if step != currentStep {
-                            EaveHaptics.tick()
                             withAnimation(EaveMotion.tabSwitch) {
                                 currentStep = step
                             }
@@ -216,7 +222,6 @@ struct OnboardingView: View {
                 Spacer(minLength: 8)
 
                 Button(coordinator.menuBarManager.isHiddenExpanded ? "Collapse Divider" : "Reveal Divider") {
-                    EaveHaptics.tap()
                     coordinator.menuBarManager.toggleHidden()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle())
@@ -229,7 +234,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
             )
 
             HStack(spacing: 16) {
@@ -297,7 +302,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
             )
         }
     }
@@ -311,7 +316,6 @@ struct OnboardingView: View {
         let isSelected = settings.hoverDisplayMode == mode
 
         return Button {
-            EaveHaptics.tick()
             withAnimation(EaveMotion.microSpring) {
                 settings.expandOnEaveHover = true
                 settings.hoverDisplayMode = mode
@@ -402,7 +406,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.55)
+                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
             )
 
             if mode == .secondRow {
@@ -428,7 +432,7 @@ struct OnboardingView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                        .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
                 )
                 .padding(.trailing, 18)
             } else {
@@ -444,7 +448,7 @@ struct OnboardingView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.55)
+                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
         )
     }
 
@@ -460,7 +464,7 @@ struct OnboardingView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(
                                 granted
-                                    ? Color(red: 0.20, green: 0.72, blue: 0.42).opacity(0.14)
+                                    ? Color.green.opacity(0.14)
                                     : EavePalette.pillFill(effectiveColorScheme)
                             )
                             .frame(width: 34, height: 34)
@@ -468,7 +472,7 @@ struct OnboardingView: View {
                             .font(.system(size: 14.5, weight: .medium))
                             .foregroundStyle(
                                 granted
-                                    ? Color(red: 0.20, green: 0.72, blue: 0.42)
+                                    ? Color.green
                                     : .primary.opacity(0.75)
                             )
                     }
@@ -481,8 +485,8 @@ struct OnboardingView: View {
                                 Circle()
                                     .fill(
                                         granted
-                                            ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                            : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                            ? Color.green
+                                            : Color.orange
                                     )
                                     .frame(width: 6, height: 6)
                                 Text(granted ? "Granted" : "Optional")
@@ -503,7 +507,6 @@ struct OnboardingView: View {
 
                     if !granted {
                         Button("Grant") {
-                            EaveHaptics.tap()
                             coordinator.permissions.requestAccessibilityPrompt()
                             coordinator.permissions.openAccessibilitySettings()
                         }
@@ -526,7 +529,7 @@ struct OnboardingView: View {
                     )
                     privacyBenefitRow(
                         symbol: "bell.badge",
-                        text: "Automatic Notch Peek alerts when hidden apps get unread Dock badges"
+                        text: "Automatic notch alerts when hidden apps get unread Dock badges"
                     )
                 }
                 .padding(.horizontal, 14)
@@ -538,7 +541,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
             )
             .animation(EaveMotion.microSpring, value: granted)
 
@@ -559,7 +562,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
             )
         }
     }
@@ -587,7 +590,7 @@ struct OnboardingView: View {
                         .frame(height: 60)
                         .overlay(
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
                         )
 
                     HStack(spacing: 0) {
@@ -608,7 +611,7 @@ struct OnboardingView: View {
                         if settings.enableNotchPeek {
                             Text("3")
                                 .font(EaveTypography.badgeFont(size: 11.0, weight: "Fredoka-Regular"))
-                                .foregroundStyle(Color(red: 1.0, green: 0.34, blue: 0.30))
+                                .foregroundStyle(Color(eaveHex: "#34C759"))
                                 .frame(width: 28)
                                 .transition(.opacity)
                         }
@@ -628,7 +631,6 @@ struct OnboardingView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        EaveHaptics.tap()
                         coordinator.signalHub.sendTestPeek()
                         withAnimation(EaveMotion.microSpring) {
                             previewSentFeedback = true
@@ -643,7 +645,7 @@ struct OnboardingView: View {
                         HStack(spacing: 5) {
                             Image(systemName: previewSentFeedback ? "checkmark" : "sparkles")
                                 .font(.system(size: 10, weight: .semibold))
-                            Text(previewSentFeedback ? "Peek Triggered" : "Preview Notch Peek")
+                            Text(previewSentFeedback ? "Alert Sent" : "Preview Notch Alert")
                         }
                     }
                     .buttonStyle(EaveSecondaryButtonStyle())
@@ -663,13 +665,13 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
             )
 
             EaveSettingsCard {
                 EaveSettingsToggleRow(
                     "Show hidden app notifications in Notch",
-                    subtitle: "Briefly peeks around the notch when a hidden or pinned app has unread badges.",
+                    subtitle: "Briefly shows an alert when a hidden or watched app has unread badges.",
                     isOn: $settings.enableNotchPeek.animation(EaveMotion.microSpring)
                 )
                 .onChange(of: settings.enableNotchPeek) { _, _ in
@@ -696,7 +698,6 @@ struct OnboardingView: View {
         HStack {
             if let prev = currentStep.previous {
                 Button("Back") {
-                    EaveHaptics.tick()
                     withAnimation(EaveMotion.tabSwitch) {
                         currentStep = prev
                     }
@@ -704,10 +705,10 @@ struct OnboardingView: View {
                 .buttonStyle(EaveSecondaryButtonStyle())
             } else {
                 Button("Skip") {
-                    EaveHaptics.tick()
                     onFinish()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
             }
 
             Spacer()
@@ -729,7 +730,6 @@ struct OnboardingView: View {
 
             if let next = currentStep.next {
                 Button {
-                    EaveHaptics.tick()
                     withAnimation(EaveMotion.tabSwitch) {
                         currentStep = next
                     }
@@ -741,12 +741,13 @@ struct OnboardingView: View {
                     }
                 }
                 .buttonStyle(EaveProminentButtonStyle())
+                .keyboardShortcut(.defaultAction)
             } else {
                 Button("Start Using Eave") {
-                    EaveHaptics.tap()
                     onFinish()
                 }
                 .buttonStyle(EaveProminentButtonStyle())
+                .keyboardShortcut(.defaultAction)
             }
         }
     }
@@ -755,11 +756,13 @@ struct OnboardingView: View {
 // MARK: - Animated Menu Bar Hiding Stage (Step 1)
 
 private struct OnboardingMenuBarDemoStage: View {
+    @Environment(\.eaveHairline) private var hairline
     let colorScheme: ColorScheme
 
     /// 0 = expanded before drag, 1 = icon gliding left past dot, 2 = collapsed cleanly
     @State private var phase: Int = 0
     @State private var loopTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -847,7 +850,7 @@ private struct OnboardingMenuBarDemoStage: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
             )
             .animation(EaveMotion.notchMorph, value: phase)
         }
@@ -858,7 +861,7 @@ private struct OnboardingMenuBarDemoStage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: hairline)
         )
         .onAppear {
             startAnimationLoop()
@@ -866,6 +869,9 @@ private struct OnboardingMenuBarDemoStage: View {
         .onDisappear {
             loopTask?.cancel()
             loopTask = nil
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            startAnimationLoop()
         }
     }
 
@@ -894,6 +900,12 @@ private struct OnboardingMenuBarDemoStage: View {
 
     private func startAnimationLoop() {
         loopTask?.cancel()
+        loopTask = nil
+        // Reduce Motion: hold a single static frame instead of looping the drag demo.
+        guard !reduceMotion else {
+            phase = 0
+            return
+        }
         loopTask = Task { @MainActor in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_900_000_000)

@@ -43,6 +43,13 @@ extension AppAppearanceMode {
     }
 }
 
+// MARK: - Hairlines
+
+extension EnvironmentValues {
+    /// One physical pixel at the current display scale (0.5pt on Retina, 1pt on 1x displays).
+    var eaveHairline: CGFloat { 1 / max(displayScale, 1) }
+}
+
 // MARK: - Unified Motion Language
 
 /// Curated spring and easing curves tuned for 120Hz ProMotion macOS displays.
@@ -71,13 +78,18 @@ struct EaveDockMagnification: Equatable, Sendable {
 
     static let resting = EaveDockMagnification(scale: 1.0, liftY: 0.0, isPrimary: false)
 
-    static func resolve(index: Int, hoveredIndex: Int?) -> EaveDockMagnification {
+    /// When `reduceMotion` is true the hovered tile is still flagged as primary (for highlight), but never scales or lifts.
+    static func resolve(index: Int, hoveredIndex: Int?, reduceMotion: Bool = false) -> EaveDockMagnification {
         guard let hoveredIndex else { return .resting }
-        switch abs(index - hoveredIndex) {
+        let distance = abs(index - hoveredIndex)
+        if reduceMotion {
+            return EaveDockMagnification(scale: 1.0, liftY: 0.0, isPrimary: distance == 0)
+        }
+        switch distance {
         case 0:
-            return EaveDockMagnification(scale: 1.18, liftY: -3.5, isPrimary: true)
+            return EaveDockMagnification(scale: 1.11, liftY: -1.5, isPrimary: true)
         case 1:
-            return EaveDockMagnification(scale: 1.06, liftY: -1.0, isPrimary: false)
+            return EaveDockMagnification(scale: 1.03, liftY: -0.5, isPrimary: false)
         default:
             return .resting
         }
@@ -118,8 +130,11 @@ enum EavePalette {
             : Color.white.opacity(0.92)
     }
 
-    static func cardBorder(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func cardBorder(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        if contrast == .increased {
+            return scheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.22)
+        }
+        return scheme == .dark
             ? Color.white.opacity(0.085)
             : Color.black.opacity(0.075)
     }
@@ -130,14 +145,20 @@ enum EavePalette {
             : Color.black.opacity(0.030)
     }
 
-    static func insetBorder(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func insetBorder(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        if contrast == .increased {
+            return scheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.20)
+        }
+        return scheme == .dark
             ? Color.white.opacity(0.065)
             : Color.black.opacity(0.060)
     }
 
-    static func divider(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func divider(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        if contrast == .increased {
+            return scheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.20)
+        }
+        return scheme == .dark
             ? Color.white.opacity(0.07)
             : Color.black.opacity(0.065)
     }
@@ -178,7 +199,6 @@ struct EaveNotchIconButton: View {
 
     var body: some View {
         Button {
-            EaveHaptics.tick()
             if spinOnClick {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.76)) {
                     spinCount += 1
@@ -204,6 +224,7 @@ struct EaveNotchIconButton: View {
             }
         }
         .help(helpText)
+        .accessibilityLabel(helpText)
     }
 }
 
@@ -268,9 +289,6 @@ private struct EaveProminentButtonBody: View {
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
             .animation(EaveMotion.hover, value: isHovered)
             .onHover { isHovered = $0 }
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { EaveHaptics.tick() }
-            }
     }
 }
 
@@ -284,11 +302,18 @@ struct EaveSecondaryButtonStyle: ButtonStyle {
 }
 
 private struct EaveSecondaryButtonBody: View {
+    @Environment(\.eaveHairline) private var hairline
     let configuration: ButtonStyle.Configuration
     let compact: Bool
     @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var strokeOpacity: Double {
+        if contrast == .increased { return isHovered ? 0.36 : 0.28 }
+        return isHovered ? 0.16 : 0.095
+    }
 
     var body: some View {
         configuration.label
@@ -306,15 +331,12 @@ private struct EaveSecondaryButtonBody: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: compact ? 6 : 7.5, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(isHovered ? 0.16 : 0.095), lineWidth: 0.65)
+                    .strokeBorder(Color.primary.opacity(strokeOpacity), lineWidth: hairline)
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
             .animation(EaveMotion.hover, value: isHovered)
             .onHover { isHovered = $0 }
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { EaveHaptics.tick() }
-            }
     }
 }
 
@@ -322,16 +344,19 @@ private struct EaveSecondaryButtonBody: View {
 
 /// Minimalist macOS keyboard keycap with crisp hairline bevel.
 struct EaveKeycap: View {
+    @Environment(\.eaveHairline) private var hairline
     let label: String
     var fontSize: CGFloat = 10.5
     var horizontalPadding: CGFloat = 5.5
     var verticalPadding: CGFloat = 2.5
     var isDarkSurface: Bool = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
+        let isIncreased = contrast == .increased
         Text(label)
             .font(.system(size: fontSize, weight: .medium, design: .rounded))
-            .foregroundStyle(isDarkSurface ? Color.white.opacity(0.76) : Color.primary.opacity(0.72))
+            .foregroundStyle(isDarkSurface ? Color.white.opacity(isIncreased ? 0.92 : 0.76) : Color.primary.opacity(isIncreased ? 0.90 : 0.72))
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
             .frame(minWidth: fontSize * 1.85)
@@ -342,8 +367,10 @@ struct EaveKeycap: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .strokeBorder(
-                        isDarkSurface ? Color.white.opacity(0.14) : Color.primary.opacity(0.12),
-                        lineWidth: 0.55
+                        isDarkSurface
+                            ? Color.white.opacity(isIncreased ? 0.32 : 0.14)
+                            : Color.primary.opacity(isIncreased ? 0.30 : 0.12),
+                        lineWidth: hairline
                     )
             )
     }
@@ -352,10 +379,12 @@ struct EaveKeycap: View {
 // MARK: - Editorial Settings Card & Nested Sub-Settings Primitives
 
 struct EaveSettingsCard<Content: View>: View {
+    @Environment(\.eaveHairline) private var hairline
     let title: String?
     let subtitle: String?
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     init(
         _ title: String? = nil,
@@ -377,7 +406,7 @@ struct EaveSettingsCard<Content: View>: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(contrast == .increased ? .secondary : .tertiary)
                     }
                 }
                 .padding(.horizontal, 3)
@@ -397,7 +426,7 @@ struct EaveSettingsCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(colorScheme, contrast: contrast), lineWidth: hairline)
             )
         }
     }
@@ -406,8 +435,10 @@ struct EaveSettingsCard<Content: View>: View {
 /// Recessed nested container for secondary / dependent settings beneath a parent toggle,
 /// giving unmistakable visual hierarchy without noisy flat dividers.
 struct EaveSettingsSubSection<Content: View>: View {
+    @Environment(\.eaveHairline) private var hairline
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -419,7 +450,7 @@ struct EaveSettingsSubSection<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+                .strokeBorder(EavePalette.insetBorder(colorScheme, contrast: contrast), lineWidth: hairline)
         )
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
@@ -453,7 +484,7 @@ struct EaveSettingsToggleRow: View {
 
             Spacer(minLength: 8)
 
-            Toggle("", isOn: $isOn)
+            Toggle(title, isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -522,8 +553,16 @@ struct EaveSettingsSliderRow: View {
                     )
             }
 
-            Slider(value: $value, in: range, step: step)
-                .controlSize(.small)
+            Slider(value: $value, in: range, step: step) {
+                Text(title)
+            }
+            .labelsHidden()
+            .accessibilityValue(valueText)
+            .controlSize(.small)
+            // The only haptic in Eave: a light detent tick as the slider snaps to each step.
+            .onChange(of: value) { oldValue, newValue in
+                if oldValue != newValue { EaveHaptics.tick() }
+            }
         }
         .padding(.horizontal, inset ? 12 : 14)
         .padding(.vertical, inset ? 9.5 : 10.5)
@@ -571,7 +610,7 @@ struct EaveSettingsSegmentedRow<Selection: Hashable, OptionView: View>: View {
 
             Spacer(minLength: 10)
 
-            Picker("", selection: $selection) {
+            Picker(title, selection: $selection) {
                 options()
             }
             .labelsHidden()
@@ -585,13 +624,15 @@ struct EaveSettingsSegmentedRow<Selection: Hashable, OptionView: View>: View {
 }
 
 struct EaveCardDivider: View {
+    @Environment(\.eaveHairline) private var hairline
     var leadingInset: CGFloat = 14
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Rectangle()
-            .fill(EavePalette.divider(colorScheme))
-            .frame(height: 0.65)
+            .fill(EavePalette.divider(colorScheme, contrast: contrast))
+            .frame(height: hairline)
             .padding(.leading, leadingInset)
     }
 }

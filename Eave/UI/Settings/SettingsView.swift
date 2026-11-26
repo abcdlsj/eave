@@ -4,6 +4,7 @@ import SwiftUI
 /// Restrained, monochrome editorial Settings studio for Eave (Apple Studio / Linear aesthetic).
 /// Synchronizes Light / Dark / System appearance live across sidebar, canvas, cards, and nested trays.
 struct SettingsView: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
 
     @State private var selectedTab: SettingsTab = .general
@@ -44,7 +45,7 @@ struct SettingsView: View {
 
             Rectangle()
                 .fill(EavePalette.divider(effectiveColorScheme))
-                .frame(width: 0.65)
+                .frame(width: hairline)
 
             ScrollView {
                 detailPane
@@ -96,7 +97,6 @@ struct SettingsView: View {
 
             // Quiet Accessibility status pill
             Button {
-                EaveHaptics.tick()
                 if coordinator.permissions.hasAccessibility {
                     coordinator.permissions.refresh()
                 } else {
@@ -108,8 +108,8 @@ struct SettingsView: View {
                     Circle()
                         .fill(
                             coordinator.permissions.hasAccessibility
-                                ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                ? Color.green
+                                : Color.orange
                         )
                         .frame(width: 6.5, height: 6.5)
 
@@ -138,7 +138,7 @@ struct SettingsView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                        .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                        .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
                 )
                 .padding(.horizontal, 11)
                 .padding(.bottom, 14)
@@ -158,7 +158,6 @@ struct SettingsView: View {
 
         return Button {
             if selectedTab != tab {
-                EaveHaptics.tick()
                 withAnimation(EaveMotion.tabSwitch) {
                     selectedTab = tab
                 }
@@ -192,9 +191,26 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.98))
+        .modifier(SidebarShortcut(tab: tab))
         .onHover { hovering in
             withAnimation(EaveMotion.hover) {
                 hoveredTab = hovering ? tab : (hoveredTab == tab ? nil : hoveredTab)
+            }
+        }
+    }
+
+    /// ⌘1 / ⌘2 / ⌘3 switch sidebar sections in order.
+    private struct SidebarShortcut: ViewModifier {
+        let tab: SettingsTab
+
+        func body(content: Content) -> some View {
+            if let index = SettingsTab.allCases.firstIndex(of: tab), index < 9 {
+                let digit = Character(String(index + 1))
+                content
+                    .keyboardShortcut(KeyEquivalent(digit), modifiers: .command)
+                    .help("\(tab.rawValue) (⌘\(index + 1))")
+            } else {
+                content
             }
         }
     }
@@ -215,6 +231,7 @@ struct SettingsView: View {
 // MARK: - General Tab
 
 private struct GeneralSettingsTab: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
     @Bindable var settings: EaveSettings
     @Environment(\.colorScheme) private var colorScheme
@@ -262,7 +279,6 @@ private struct GeneralSettingsTab: View {
                 }
             }
             .onChange(of: settings.appearanceMode) { _, _ in
-                EaveHaptics.tick()
                 coordinator.applyAppearance()
             }
 
@@ -276,6 +292,22 @@ private struct GeneralSettingsTab: View {
                     set: { coordinator.launchAtLogin.setEnabled($0) }
                 )
             )
+
+            if let error = coordinator.launchAtLogin.lastError {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.orange)
+                        .padding(.top, 1)
+                    Text("Couldn't change login item: \(error)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+                .accessibilityElement(children: .combine)
+            }
 
             EaveCardDivider()
 
@@ -301,7 +333,6 @@ private struct GeneralSettingsTab: View {
                 Spacer(minLength: 8)
 
                 Button("Open Guide") {
-                    EaveHaptics.tick()
                     coordinator.openOnboardingWindow()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle(compact: true))
@@ -345,7 +376,6 @@ private struct GeneralSettingsTab: View {
                 }
             }
             .onChange(of: settings.hoverDisplayMode) { _, _ in
-                EaveHaptics.tick()
                 coordinator.syncHoverSettings()
             }
 
@@ -355,7 +385,7 @@ private struct GeneralSettingsTab: View {
                 "Hover delay",
                 subtitle: "Time pointer rests on the Eave icon before opening.",
                 value: $settings.hoverDelaySeconds,
-                in: 0.10...0.60,
+                in: 0.10...1.00,
                 step: 0.05,
                 valueText: String(format: "%.2fs", settings.hoverDelaySeconds),
                 inset: true
@@ -385,7 +415,6 @@ private struct GeneralSettingsTab: View {
             }
         }
         .onChange(of: settings.secondRowLayoutMode) { _, _ in
-            EaveHaptics.tick()
             coordinator.syncHoverSettings()
         }
 
@@ -415,7 +444,6 @@ private struct GeneralSettingsTab: View {
     private var menuBarDensityCard: some View {
         EaveSettingsCard("Menu Bar Density") {
             Button {
-                EaveHaptics.tick()
                 withAnimation(EaveMotion.microSpring) {
                     showSpacingOptions.toggle()
                 }
@@ -425,7 +453,7 @@ private struct GeneralSettingsTab: View {
                         Text("System icon spacing")
                             .font(.system(size: 13))
                             .foregroundStyle(.primary)
-                        Text("Tune NSStatusItemSpacing · apps apply on relaunch; system icons require re-login.")
+                        Text("Adjust the gap between menu bar icons. Apps update after relaunch; system icons after you log out.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
                     }
@@ -485,7 +513,6 @@ private struct GeneralSettingsTab: View {
                         spacing: Int(spacingValue),
                         selectionPadding: Int(paddingValue)
                     )
-                    EaveHaptics.tap()
                     withAnimation(EaveMotion.microSpring) {
                         appliedFeedback = true
                     }
@@ -547,8 +574,8 @@ private struct GeneralSettingsTab: View {
                             Circle()
                                 .fill(
                                     coordinator.permissions.hasAccessibility
-                                        ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                        : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                        ? Color.green
+                                        : Color.orange
                                 )
                                 .frame(width: 6, height: 6)
                             Text(coordinator.permissions.hasAccessibility ? "Granted" : "Not Granted")
@@ -570,7 +597,6 @@ private struct GeneralSettingsTab: View {
 
                 if coordinator.permissions.hasAccessibility {
                     Button("Refresh") {
-                        EaveHaptics.tick()
                         coordinator.permissions.refresh()
                     }
                     .buttonStyle(EaveSecondaryButtonStyle(compact: true))
@@ -617,7 +643,6 @@ private struct GeneralSettingsTab: View {
                 Spacer()
 
                 Button {
-                    EaveHaptics.tick()
                     coordinator.showSecondRowBar(pinnedForPreview: true)
                 } label: {
                     HStack(spacing: 4) {
@@ -666,7 +691,7 @@ private struct GeneralSettingsTab: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                        .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
                 )
             }
         }
@@ -677,7 +702,7 @@ private struct GeneralSettingsTab: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.55)
+                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: hairline)
         )
     }
 
@@ -725,7 +750,7 @@ private struct GeneralSettingsTab: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7.5, style: .continuous)
-                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.6)
+                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
         )
     }
 }
@@ -733,6 +758,7 @@ private struct GeneralSettingsTab: View {
 // MARK: - Notch Tab
 
 private struct NotchSettingsTab: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
     @Bindable var settings: EaveSettings
     @Environment(\.colorScheme) private var colorScheme
@@ -759,7 +785,7 @@ private struct NotchSettingsTab: View {
         VStack(alignment: .leading, spacing: 18) {
             EavePageHeader(
                 title: "Notch",
-                subtitle: "Pure-obsidian Peek notifications and edge indicators fused to your hardware notch."
+                subtitle: "Quiet alerts and ongoing indicators shown around the top center of your screen."
             )
 
             notchPreviewStage
@@ -773,7 +799,7 @@ private struct NotchSettingsTab: View {
         EaveSettingsCard("Notifications") {
             EaveSettingsToggleRow(
                 "Show hidden app notifications",
-                subtitle: "Unfurls Peek wings, subtle edge badges, and background status alerts around the camera.",
+                subtitle: "Briefly shows the app icon and unread count when a hidden or watched app gets a new badge.",
                 isOn: $settings.enableNotchPeek.animation(EaveMotion.microSpring)
             )
             .onChange(of: settings.enableNotchPeek) { _, _ in
@@ -783,8 +809,8 @@ private struct NotchSettingsTab: View {
             if settings.enableNotchPeek {
                 EaveSettingsSubSection {
                     EaveSettingsSliderRow(
-                        "Peek duration",
-                        subtitle: "How long a notification unfurls before smoothly retracting.",
+                        "Alert duration",
+                        subtitle: "How long a notch alert stays visible before it hides.",
                         value: $settings.peekDurationSeconds,
                         in: 2.0...10.0,
                         step: 0.5,
@@ -801,7 +827,9 @@ private struct NotchSettingsTab: View {
         EaveSettingsCard("Watched Applications") {
             EaveSettingsToggleRow(
                 "Automatically watch hidden apps",
-                subtitle: "Tracking \(coordinator.signalHub.discoveredHiddenBundleIDs.count) hidden · \(settings.watchedBundleIDs.count) pinned.",
+                subtitle: settings.watchHiddenAppsAutomatically
+                    ? "Tracking \(coordinator.signalHub.discoveredHiddenBundleIDs.count) hidden · \(settings.watchedBundleIDs.count) pinned."
+                    : "Only pinned apps are watched · \(settings.watchedBundleIDs.count) pinned.",
                 isOn: $settings.watchHiddenAppsAutomatically
             )
 
@@ -825,7 +853,7 @@ private struct NotchSettingsTab: View {
                 .menuStyle(.borderedButton)
                 .fixedSize()
 
-                TextField("or bundle identifier...", text: $newBundleID)
+                TextField("Or enter an app ID (com.example.app)…", text: $newBundleID)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
 
@@ -855,10 +883,10 @@ private struct NotchSettingsTab: View {
     }
 
     private var notchBridgeCard: some View {
-        EaveSettingsCard("NotchBridge") {
+        EaveSettingsCard("Developer · Script & App Signals", subtitle: "NotchBridge local automation API") {
             EaveSettingsToggleRow(
-                "Accept local CLI & app signals",
-                subtitle: "Push icon, accent dot color, optional numeric badge, and click callback via eave:// or DistributedNotification.",
+                "Accept signals from scripts and apps",
+                subtitle: "Lets local scripts, CLIs, and apps show an icon, colored dot, or count in the notch, with an optional click link.",
                 isOn: $settings.enableNotchBridge.animation(EaveMotion.microSpring)
             )
 
@@ -866,7 +894,6 @@ private struct NotchSettingsTab: View {
                 EaveCardDivider()
 
                 Button {
-                    EaveHaptics.tick()
                     withAnimation(EaveMotion.microSpring) {
                         showBridgeDetails.toggle()
                     }
@@ -921,12 +948,12 @@ private struct NotchSettingsTab: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.6)
+                            .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
                     )
 
                 HStack {
                     VStack(alignment: .leading, spacing: 1.5) {
-                        Text("DistributedNotification")
+                        Text("App notification name")
                             .font(.system(size: 10.5, weight: .medium))
                             .foregroundStyle(.secondary)
                         Text(NotchBridge.distributedNotificationName.rawValue)
@@ -986,7 +1013,7 @@ private struct NotchSettingsTab: View {
                     .frame(height: 62)
                     .overlay(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+                            .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: hairline)
                     )
 
                 // Miniature hardware notch silhouette
@@ -1008,7 +1035,7 @@ private struct NotchSettingsTab: View {
                     if settings.enableNotchPeek {
                         Text("3")
                             .font(EaveTypography.badgeFont(size: 11.0, weight: "Fredoka-Regular"))
-                            .foregroundStyle(Color(red: 1.0, green: 0.34, blue: 0.30))
+                            .foregroundStyle(Color(eaveHex: "#34C759"))
                             .frame(width: 28)
                             .transition(.opacity)
                     }
@@ -1027,7 +1054,7 @@ private struct NotchSettingsTab: View {
             }
 
             HStack(spacing: 8) {
-                Button("Preview Notch Peek") {
+                Button("Preview Notch Alert") {
                     coordinator.signalHub.sendTestPeek()
                 }
                 .buttonStyle(EaveProminentButtonStyle())
@@ -1035,7 +1062,7 @@ private struct NotchSettingsTab: View {
 
                 Spacer()
 
-                Text(settings.enableNotchPeek ? "Active · \(String(format: "%.1fs", settings.peekDurationSeconds)) peek" : "Notifications paused")
+                Text(settings.enableNotchPeek ? "On · alerts show for \(String(format: "%.1fs", settings.peekDurationSeconds))" : "Alerts paused")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
@@ -1048,7 +1075,7 @@ private struct NotchSettingsTab: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
         )
     }
 
@@ -1076,7 +1103,6 @@ private struct NotchSettingsTab: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        EaveHaptics.tap()
     }
 
     private func triggerCopied(_ flag: Binding<Bool>) {
@@ -1129,7 +1155,6 @@ private struct WatchedAppRow: View {
             Spacer()
 
             Button(role: .destructive) {
-                EaveHaptics.tick()
                 onRemove()
             } label: {
                 Image(systemName: "xmark")
@@ -1139,6 +1164,8 @@ private struct WatchedAppRow: View {
                     .background(Circle().fill(Color.primary.opacity(isHovered ? 0.08 : 0.0)))
             }
             .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.88))
+            .accessibilityLabel("Stop watching \(appName)")
+            .help("Stop watching \(appName)")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8.5)
@@ -1200,7 +1227,6 @@ private struct ShortcutsSettingsTab: View {
                 Button {
                     coordinator.settings.resetHotKeys()
                     coordinator.hotKeyManager.register(settings: coordinator.settings)
-                    EaveHaptics.tap()
                     withAnimation(EaveMotion.microSpring) {
                         restoredFeedback = true
                     }
@@ -1227,9 +1253,9 @@ private struct ShortcutsSettingsTab: View {
                 EaveCardDivider()
                 interactionRow(gesture: "Hover Eave", description: "Reveal hidden items inline or in the floating Second Row.")
                 EaveCardDivider()
-                interactionRow(gesture: "Right-click tile", description: "Forward right-click directly to menu-bar utilities like Tailscale.")
+                interactionRow(gesture: "Right-click icon", description: "In the Second Row, open an app's menu bar menu, e.g. Tailscale.")
                 EaveCardDivider()
-                interactionRow(gesture: "⌘ + Drag icon", description: "Move menu bar icons left of the dot divider to hide them.")
+                interactionRow(gesture: "⌘ + Drag icon", description: "Click the Eave icon to show the • divider, then ⌘-drag icons to its left to hide them.")
             }
         }
     }

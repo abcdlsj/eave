@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Observation
 import SwiftUI
 
@@ -54,6 +55,11 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private var panel: MenuBarSearchWindow?
     private var keyMonitor: Any?
     private var closeTask: Task<Void, Never>?
+    /// App that was frontmost before the panel opened; re-activated when the panel is dismissed without a selection.
+    @ObservationIgnored private var previousFrontmostApp: NSRunningApplication?
+    /// Last pointer location that produced a hover selection, used to ignore hover events caused by
+    /// rows scrolling under a stationary pointer during keyboard navigation.
+    @ObservationIgnored private var lastHoverMouseLocation: CGPoint?
 
     private(set) var appearanceMode: AppAppearanceMode = .system
     var query: String = "" {
@@ -67,6 +73,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private(set) var isVisible: Bool = false
     private(set) var isPresented: Bool = false
     private(set) var isRefreshing: Bool = false
+    private(set) var hasAccessibilityPermission: Bool = true
 
     var onSelectItem: ((MenuBarItemInfo) -> Void)?
     var onRequestRefreshItems: (() async -> [MenuBarItemInfo])?
@@ -89,7 +96,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
 
     func toggle() {
         if isVisible {
-            close()
+            close(restoringFocus: true)
         } else {
             open()
         }
@@ -107,6 +114,11 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         selectedIndex = 0
         isVisible = true
         isPresented = false
+        hasAccessibilityPermission = AXIsProcessTrusted()
+        lastHoverMouseLocation = NSEvent.mouseLocation
+
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        previousFrontmostApp = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
 
         if panel == nil {
             let rect = NSRect(x: 0, y: 0, width: 556, height: 416)
@@ -118,7 +130,9 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
             panel = window
         }
 
-        if let panel, let screen = NotchGeometryResolver.preferredScreen() ?? NSScreen.main {
+        let mouse = NSEvent.mouseLocation
+        let mouseScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+        if let panel, let screen = mouseScreen ?? NotchGeometryResolver.preferredScreen() ?? NSScreen.main {
             let x = screen.frame.midX - panel.frame.width / 2
             let y = screen.frame.maxY - panel.frame.height - 135
             panel.setFrameOrigin(NSPoint(x: x, y: y))
@@ -127,7 +141,6 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         }
 
         installKeyMonitor()
-        EaveHaptics.tick()
 
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isVisible else { return }
@@ -145,9 +158,16 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         }
     }
 
-    func close() {
+    /// Dismisses the panel. Pass `restoringFocus: true` for explicit dismissals (Escape, hotkey toggle)
+    /// so the previously frontmost app gets keyboard focus back; selections leave focus to the opened item.
+    func close(restoringFocus: Bool = false) {
         guard isVisible else { return }
         isVisible = false
+        let appToRestore = previousFrontmostApp
+        previousFrontmostApp = nil
+        if restoringFocus, NSApp.isActive, let appToRestore, !appToRestore.isTerminated {
+            appToRestore.activate()
+        }
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
@@ -169,15 +189,24 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         let items = filteredItems
         guard items.indices.contains(selectedIndex) else { return }
         let chosen = items[selectedIndex]
-        EaveHaptics.tick()
         close()
         onSelectItem?(chosen)
     }
 
     func select(_ info: MenuBarItemInfo) {
-        EaveHaptics.tick()
         close()
         onSelectItem?(info)
+    }
+
+    /// Returns true when a hover over a row should move the selection, i.e. the pointer actually moved
+    /// (rather than rows scrolling beneath a stationary pointer).
+    func shouldAcceptHoverSelection() -> Bool {
+        let location = NSEvent.mouseLocation
+        if let last = lastHoverMouseLocation, hypot(location.x - last.x, location.y - last.y) < 0.5 {
+            return false
+        }
+        lastHoverMouseLocation = location
+        return true
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -192,10 +221,9 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
             guard let self, self.isVisible else { return event }
             switch event.keyCode {
             case 53: // Escape
-                self.close()
+                self.close(restoringFocus: true)
                 return nil
             case 48: // Tab cycles section filter
-                EaveHaptics.tick()
                 withAnimation(EaveMotion.microSpring) {
                     self.sectionFilter = self.sectionFilter.next
                 }
@@ -227,6 +255,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
 }
 
 struct MenuBarSearchView: View {
+    @Environment(\.eaveHairline) private var hairline
     @Bindable var controller: MenuBarSearchController
     @FocusState private var isFieldFocused: Bool
     @Namespace private var filterNamespace
@@ -240,7 +269,7 @@ struct MenuBarSearchView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(controller.query.isEmpty ? .secondary : .primary)
 
-                TextField("Search menu bar items...", text: $controller.query)
+                TextField("Search menu bar items…", text: $controller.query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16, weight: .regular))
                     .focused($isFieldFocused)
@@ -257,7 +286,6 @@ struct MenuBarSearchView: View {
 
                 if !controller.query.isEmpty {
                     Button {
-                        EaveHaptics.tick()
                         withAnimation(EaveMotion.hover) {
                             controller.query = ""
                         }
@@ -267,6 +295,7 @@ struct MenuBarSearchView: View {
                             .foregroundStyle(.secondary.opacity(0.75))
                     }
                     .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.86))
+                    .accessibilityLabel("Clear search")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
@@ -286,7 +315,7 @@ struct MenuBarSearchView: View {
 
             Rectangle()
                 .fill(Color.primary.opacity(0.075))
-                .frame(height: 0.6)
+                .frame(height: hairline)
 
             // Results list
             let items = controller.filteredItems
@@ -295,12 +324,14 @@ struct MenuBarSearchView: View {
                     Image(systemName: controller.query.isEmpty ? "rectangle.topthird.inset.filled" : "magnifyingglass")
                         .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(.tertiary)
-                    Text(controller.query.isEmpty ? "No menu bar items discovered" : "No matches for \"\(controller.query)\"")
+                    Text(controller.query.isEmpty ? "No matching menu bar items" : "No matches for \"\(controller.query)\"")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
-                    Text("Grant Accessibility permission in Settings for complete discovery.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.tertiary)
+                    if !controller.hasAccessibilityPermission {
+                        Text("Grant Accessibility permission in Settings to find hidden items.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 .padding(.horizontal, 36)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -315,6 +346,7 @@ struct MenuBarSearchView: View {
                                     isSelected: index == controller.selectedIndex,
                                     selectionNamespace: selectionNamespace,
                                     onHoverSelect: {
+                                        guard controller.shouldAcceptHoverSelection() else { return }
                                         if controller.selectedIndex != index {
                                             withAnimation(EaveMotion.microSpring) {
                                                 controller.selectedIndex = index
@@ -341,7 +373,7 @@ struct MenuBarSearchView: View {
 
             Rectangle()
                 .fill(Color.primary.opacity(0.075))
-                .frame(height: 0.6)
+                .frame(height: hairline)
 
             // Minimalist keycap footer
             HStack(spacing: 12) {
@@ -350,7 +382,7 @@ struct MenuBarSearchView: View {
                 keyHint("↩", label: "Open")
                 keyHint("⎋", label: "Close")
                 Spacer()
-                Text("\(items.count) items")
+                Text(items.count == 1 ? "1 item" : "\(items.count) items")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()
@@ -379,7 +411,6 @@ struct MenuBarSearchView: View {
         let count = controller.count(for: filter)
 
         return Button {
-            EaveHaptics.tick()
             withAnimation(EaveMotion.microSpring) {
                 controller.sectionFilter = filter
             }

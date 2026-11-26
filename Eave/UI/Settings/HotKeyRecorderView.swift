@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Refined monochrome macOS keyboard shortcut recorder with crisp sculpted physical keycaps.
 struct HotKeyRecorderView: View {
+    @Environment(\.eaveHairline) private var hairline
     let combo: KeyCombo?
     let onChange: (KeyCombo?) -> Void
 
@@ -11,11 +12,11 @@ struct HotKeyRecorderView: View {
     @State private var isHovered = false
     @State private var pulseDot = false
     @State private var monitor: Any?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 7) {
             Button {
-                EaveHaptics.tick()
                 if isRecording {
                     stopRecording()
                 } else {
@@ -63,11 +64,13 @@ struct HotKeyRecorderView: View {
                             isRecording
                                 ? Color.primary.opacity(0.45)
                                 : Color.primary.opacity(isHovered ? 0.16 : 0.09),
-                            lineWidth: isRecording ? 1.0 : 0.65
+                            lineWidth: isRecording ? 1.0 : hairline
                         )
                 )
             }
             .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.97))
+            .accessibilityLabel(recorderAccessibilityLabel)
+            .accessibilityHint(isRecording ? "Press a key combination, or Escape to cancel." : "Records a new shortcut.")
             .onHover { hovering in
                 withAnimation(EaveMotion.hover) {
                     isHovered = hovering
@@ -76,7 +79,6 @@ struct HotKeyRecorderView: View {
 
             if combo != nil && !isRecording {
                 Button {
-                    EaveHaptics.tick()
                     stopRecording()
                     onChange(nil)
                 } label: {
@@ -89,6 +91,7 @@ struct HotKeyRecorderView: View {
                 }
                 .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.88))
                 .help("Clear Shortcut")
+                .accessibilityLabel("Clear shortcut")
                 .transition(.opacity)
             }
         }
@@ -96,6 +99,29 @@ struct HotKeyRecorderView: View {
         .onDisappear {
             stopRecording()
         }
+    }
+
+    private var recorderAccessibilityLabel: String {
+        if isRecording { return "Recording shortcut" }
+        guard let combo else { return "Record shortcut" }
+        return "Shortcut: " + Self.spokenTokens(for: combo).joined(separator: " ")
+    }
+
+    /// VoiceOver-friendly words for a combo, e.g. "Option Command H".
+    static func spokenTokens(for combo: KeyCombo) -> [String] {
+        var words: [String] = []
+        if combo.carbonModifiers & UInt32(controlKey) != 0 { words.append("Control") }
+        if combo.carbonModifiers & UInt32(optionKey) != 0 { words.append("Option") }
+        if combo.carbonModifiers & UInt32(shiftKey) != 0 { words.append("Shift") }
+        if combo.carbonModifiers & UInt32(cmdKey) != 0 { words.append("Command") }
+        let key = KeyCombo.keyLabel(for: combo.keyCode)
+        let spokenKeys: [String: String] = [
+            "↩": "Return", "⎋": "Escape", "⇥": "Tab", "⌫": "Delete",
+            "/": "Slash", ".": "Period", ",": "Comma", "-": "Minus", "=": "Equals",
+            "[": "Left Bracket", "]": "Right Bracket"
+        ]
+        words.append(spokenKeys[key] ?? key)
+        return words
     }
 
     private func keyTokens(for combo: KeyCombo) -> [String] {
@@ -110,9 +136,13 @@ struct HotKeyRecorderView: View {
 
     private func startRecording() {
         isRecording = true
-        pulseDot = false
-        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+        if reduceMotion {
             pulseDot = true
+        } else {
+            pulseDot = false
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulseDot = true
+            }
         }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
@@ -124,7 +154,6 @@ struct HotKeyRecorderView: View {
                 return nil
             }
             let recorded = KeyCombo(keyCode: event.keyCode, modifierFlags: modifiers)
-            EaveHaptics.tap()
             stopRecording()
             onChange(recorded)
             return nil

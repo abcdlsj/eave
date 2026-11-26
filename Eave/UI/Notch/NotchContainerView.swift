@@ -4,6 +4,7 @@ import SwiftUI
 /// Uses ONE persistent pure-black obsidian shell whose geometry and corner curves continuously morph
 /// with liquid-spring physics across `idle`, `ambient`, and `peek` — strictly single-line hardware height.
 struct NotchContainerView: View {
+    @Environment(\.eaveHairline) private var hairline
     let stateMachine: NotchStateMachine
     let geometryProvider: () -> NotchGeometry
     let onAlertAction: (NotchAlert) -> Void
@@ -12,6 +13,7 @@ struct NotchContainerView: View {
     @State private var rimSweepProgress: CGFloat = 0
     @State private var rimSweepOpacity: Double = 0
     @State private var rimSweepColor: Color = .white
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var geometry: NotchGeometry { geometryProvider() }
 
@@ -47,7 +49,7 @@ struct NotchContainerView: View {
                 }
             }
             .task(id: rimLoopIdentity) {
-                guard let config = activeLoopedRimConfig else { return }
+                guard !reduceMotion, let config = activeLoopedRimConfig else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 2_200_000_000)
                     guard !Task.isCancelled else { break }
@@ -90,10 +92,11 @@ struct NotchContainerView: View {
 
     /// Fires a restrained 0.72s accent light sweep along the lower notch perimeter.
     private func triggerRimSweep(accentHex: String?, source: NotchAlertSource) {
+        guard !reduceMotion else { return }
         if let hex = accentHex, !hex.isEmpty {
             rimSweepColor = Color(eaveHex: hex)
         } else if source == .dockBadge {
-            rimSweepColor = Color(red: 1.0, green: 0.27, blue: 0.23)
+            rimSweepColor = Color.red
         } else {
             rimSweepColor = Color.white.opacity(0.85)
         }
@@ -123,7 +126,6 @@ struct NotchContainerView: View {
                 notchWidth: baseW,
                 notchHeight: baseH,
                 onTap: { indicator in
-                    EaveHaptics.tick()
                     onAmbientAction(indicator)
                 }
             )
@@ -135,7 +137,6 @@ struct NotchContainerView: View {
                 notchWidth: baseW,
                 notchHeight: baseH,
                 onPrimaryAction: {
-                    EaveHaptics.tick()
                     onAlertAction(alert)
                 }
             )
@@ -171,7 +172,7 @@ struct NotchContainerView: View {
                             startPoint: .leading,
                             endPoint: .trailing
                         ),
-                        lineWidth: 0.6
+                        lineWidth: hairline
                     )
 
                 // One-shot arrival accent shimmer along the bottom rim (zero cost at rest).
@@ -205,7 +206,7 @@ struct NotchContainerView: View {
                                     startPoint: .top,
                                     endPoint: .bottom
                                 ),
-                                lineWidth: 0.6
+                                lineWidth: hairline
                             )
                     )
 
@@ -237,6 +238,7 @@ private struct NotchAmbientWingsView: View {
     @State private var breathe = false
     @State private var rippleScale: CGFloat = 1.0
     @State private var rippleOpacity: Double = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var primary: AmbientIndicator? { indicators.last }
 
@@ -255,7 +257,7 @@ private struct NotchAmbientWingsView: View {
             return Color(eaveHex: hex)
         }
         if primary?.source == .dockBadge {
-            return Color(red: 1.0, green: 0.27, blue: 0.23)
+            return Color.red
         }
         return Color.white.opacity(0.86)
     }
@@ -278,18 +280,39 @@ private struct NotchAmbientWingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.97, pressedOpacity: 0.90))
+        .accessibilityLabel(
+            NotchAccessibility.label(
+                bundleIdentifier: primary?.bundleIdentifier,
+                source: primary?.source ?? .bridge,
+                badge: primary?.badge,
+                isOngoing: true,
+                style: primary?.style ?? .dot
+            )
+        )
+        .accessibilityHint(
+            primary.map {
+                ($0.targetURL != nil || $0.bundleIdentifier != nil)
+                    ? NotchAccessibility.hint(bundleIdentifier: $0.bundleIdentifier, source: $0.source, hasURL: $0.targetURL != nil)
+                    : ""
+            } ?? ""
+        )
         .onHover { hovering in
             withAnimation(EaveMotion.hover) {
                 isHovered = hovering
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+            // Reduce Motion: hold the dot at its fully lit resting state instead of breathing.
+            if reduceMotion {
                 breathe = true
+            } else {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    breathe = true
+                }
             }
         }
         .task(id: "\(primary?.id ?? "")-\(primary?.loop ?? false)-\(primary?.style.rawValue ?? "")") {
-            guard let primary, primary.loop, primary.badge == nil, primary.style == .dot else { return }
+            guard !reduceMotion, let primary, primary.loop, primary.badge == nil, primary.style == .dot else { return }
             while !Task.isCancelled {
                 rippleScale = 1.0
                 rippleOpacity = 0.60
@@ -339,7 +362,7 @@ private struct NotchAmbientWingsView: View {
                 .minimumScaleFactor(0.85)
         } else if primary?.style == .wave {
             NotchWaveBarsView(color: accentColor)
-                .scaleEffect(isHovered ? 1.12 : 1.0)
+                .scaleEffect(isHovered && !reduceMotion ? 1.12 : 1.0)
         } else {
             // No badge provided -> quiet breathing accent dot (plus optional looped sonar ping).
             ZStack {
@@ -355,7 +378,7 @@ private struct NotchAmbientWingsView: View {
                     .frame(width: 5.5, height: 5.5)
                     .shadow(color: accentColor.opacity(breathe ? 0.45 : 0.12), radius: breathe ? 3 : 1)
                     .opacity(breathe ? 1.0 : 0.62)
-                    .scaleEffect(isHovered ? 1.18 : 1.0)
+                    .scaleEffect(isHovered && !reduceMotion ? 1.18 : 1.0)
             }
         }
     }
