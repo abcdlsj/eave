@@ -6,6 +6,7 @@ import SwiftUI
 struct HotKeyRecorderView: View {
     @Environment(\.eaveHairline) private var hairline
     let combo: KeyCombo?
+    var onRecordingChanged: (Bool) -> Void = { _ in }
     let onChange: (KeyCombo?) -> Void
 
     @State private var isRecording = false
@@ -136,6 +137,7 @@ struct HotKeyRecorderView: View {
 
     private func startRecording() {
         isRecording = true
+        onRecordingChanged(true)
         if reduceMotion {
             pulseDot = true
         } else {
@@ -150,7 +152,9 @@ struct HotKeyRecorderView: View {
                 return nil
             }
             let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard !modifiers.isEmpty else {
+            // Shift alone can't make a usable global shortcut; keep listening.
+            guard !modifiers.subtracting(.shift).isEmpty else {
+                NSSound.beep()
                 return nil
             }
             let recorded = KeyCombo(keyCode: event.keyCode, modifierFlags: modifiers)
@@ -161,6 +165,7 @@ struct HotKeyRecorderView: View {
     }
 
     private func stopRecording() {
+        if isRecording { onRecordingChanged(false) }
         isRecording = false
         pulseDot = false
         if let monitor {

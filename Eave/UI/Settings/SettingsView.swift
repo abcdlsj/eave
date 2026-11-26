@@ -889,6 +889,9 @@ private struct NotchSettingsTab: View {
                 subtitle: "Lets local scripts, CLIs, and apps show an icon, colored dot, or count in the notch, with an optional click link.",
                 isOn: $settings.enableNotchBridge.animation(EaveMotion.microSpring)
             )
+            .onChange(of: settings.enableNotchBridge) { _, _ in
+                coordinator.signalHub.syncSettings()
+            }
 
             if settings.enableNotchBridge {
                 EaveCardDivider()
@@ -1182,6 +1185,15 @@ private struct WatchedAppRow: View {
 private struct ShortcutsSettingsTab: View {
     let coordinator: AppCoordinator
     @State private var restoredFeedback = false
+    @State private var errors: [HotKeyAction: String] = [:]
+
+    private func message(for error: AppCoordinator.HotKeyUpdateError) -> String {
+        switch error {
+        case .missingModifier: "Add ⌘, ⌥ or ⌃"
+        case .duplicate(let other): "Already used by \(other.title)"
+        case .unavailable: "Taken by another app"
+        }
+    }
 
     private func subtitle(for action: HotKeyAction) -> String {
         switch action {
@@ -1213,9 +1225,21 @@ private struct ShortcutsSettingsTab: View {
 
                         Spacer()
 
-                        HotKeyRecorderView(combo: coordinator.settings.hotKey(for: action)) { newCombo in
-                            coordinator.settings.setHotKey(newCombo, for: action)
-                            coordinator.hotKeyManager.register(action: action, combo: newCombo)
+                        VStack(alignment: .trailing, spacing: 3) {
+                            HotKeyRecorderView(
+                                combo: coordinator.settings.hotKey(for: action),
+                                onRecordingChanged: { coordinator.setHotKeysSuspended($0) }
+                            ) { newCombo in
+                                withAnimation(EaveMotion.microSpring) {
+                                    errors[action] = coordinator.updateHotKey(newCombo, for: action).map(message(for:))
+                                }
+                            }
+                            if let error = errors[action] {
+                                Text(error)
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.red)
+                                    .transition(.opacity)
+                            }
                         }
                     }
                     .padding(.horizontal, 14)
@@ -1227,6 +1251,7 @@ private struct ShortcutsSettingsTab: View {
                 Button {
                     coordinator.settings.resetHotKeys()
                     coordinator.hotKeyManager.register(settings: coordinator.settings)
+                    errors.removeAll()
                     withAnimation(EaveMotion.microSpring) {
                         restoredFeedback = true
                     }

@@ -407,6 +407,10 @@ final class AppCoordinator {
         secondRowBarController.shouldDismissOnAppSwitch = { [weak self] in
             self?.settings.rehideAutomatically ?? true
         }
+        secondRowBarController.onRequestShowDivider = { [weak self] in
+            self?.secondRowBarController.hide()
+            self?.menuBarManager.expandHidden()
+        }
     }
 
     private func wireEventMonitor() {
