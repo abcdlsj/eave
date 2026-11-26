@@ -37,6 +37,10 @@ final class NotchPanelController {
     private let panel: NotchPanel
     private var screenObserver: Any?
     private var spaceObserver: Any?
+    /// While the panel accepts mouse events, pointer moves inside it are delivered to Eave itself and
+    /// never reach the global monitor. This short poll keeps hit-testing current so the panel can
+    /// return to pass-through as soon as the pointer leaves the visible wings.
+    private var interactivePollTimer: Timer?
 
     private(set) var geometry: NotchGeometry
     private(set) var isFullScreenSuppressed: Bool = false
@@ -61,6 +65,7 @@ final class NotchPanelController {
     }
 
     func tearDown() {
+        stopInteractivePoll()
         if let obs = screenObserver {
             NotificationCenter.default.removeObserver(obs)
             screenObserver = nil
@@ -77,7 +82,16 @@ final class NotchPanelController {
         geometry = updated
         let frame = Self.panelFrame(for: updated)
         panel.setFrame(frame, display: true)
+        let wasSuppressed = isFullScreenSuppressed
         isFullScreenSuppressed = NotchGeometryResolver.isFullScreenActive(on: NotchGeometryResolver.preferredScreen())
+        if isFullScreenSuppressed != wasSuppressed {
+            // Don't draw wings over full-screen video, games, or presentations.
+            if isFullScreenSuppressed {
+                panel.orderOut(nil)
+            } else {
+                panel.orderFrontRegardless()
+            }
+        }
         onGeometryChanged?(updated)
         updateMouseInteractivity()
     }
@@ -89,6 +103,11 @@ final class NotchPanelController {
         let inside = activeRect.contains(point)
 
         let shouldIgnore: Bool
+        if isFullScreenSuppressed {
+            panel.ignoresMouseEvents = true
+            stopInteractivePoll()
+            return
+        }
         switch stateMachine.state {
         case .idle:
             shouldIgnore = true
@@ -104,6 +123,27 @@ final class NotchPanelController {
         if panel.ignoresMouseEvents != shouldIgnore {
             panel.ignoresMouseEvents = shouldIgnore
         }
+        if shouldIgnore {
+            stopInteractivePoll()
+        } else {
+            startInteractivePollIfNeeded()
+        }
+    }
+
+    private func startInteractivePollIfNeeded() {
+        guard interactivePollTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleGlobalPointerMove(to: NSEvent.mouseLocation)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        interactivePollTimer = timer
+    }
+
+    private func stopInteractivePoll() {
+        interactivePollTimer?.invalidate()
+        interactivePollTimer = nil
     }
 
     func updateMouseInteractivity() {

@@ -179,16 +179,22 @@ final class AppIconService {
 
     // MARK: - High-Res Icon Loading
 
+    private static let maxLocalIconBytes = 8 * 1024 * 1024
+
     private func localFileIcon(at rawPath: String) -> NSImage? {
         let expanded = (rawPath as NSString).expandingTildeInPath
         let fileURL = URL(fileURLWithPath: expanded).standardizedFileURL
+        // Only plain, reasonably sized files: a device node (/dev/zero), FIFO, or huge image would
+        // block the main thread while SwiftUI renders the notch.
         guard fileURL.isFileURL,
-              FileManager.default.fileExists(atPath: fileURL.path) else {
+              let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = (attributes[.size] as? NSNumber)?.intValue,
+              size > 0, size <= Self.maxLocalIconBytes else {
             return nil
         }
 
-        let mtime = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date)?
-            .timeIntervalSinceReferenceDate ?? 0
+        let mtime = (attributes[.modificationDate] as? Date)?.timeIntervalSinceReferenceDate ?? 0
         let cacheKey = "file.\(fileURL.path).\(Int(mtime))"
         if let cached = iconCache[cacheKey] {
             return cached
@@ -198,6 +204,11 @@ final class AppIconService {
             return nil
         }
         let rasterized = Self.rasterize(loaded, pointSize: 36, scale: 2)
+        // Scripts often generate a fresh temp icon per signal; keep file-backed entries bounded.
+        let fileKeys = iconCache.keys.filter { $0.hasPrefix("file.") }
+        if fileKeys.count >= 64 {
+            for key in fileKeys { iconCache[key] = nil }
+        }
         iconCache[cacheKey] = rasterized
         return rasterized
     }

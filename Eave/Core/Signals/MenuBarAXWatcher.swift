@@ -12,8 +12,12 @@ final class MenuBarAXWatcher {
         let appName: String
     }
 
+    /// Minimum gap between two alerts from the same app, so a flapping status item can't pin the notch.
+    static let perAppCooldownSeconds: CFAbsoluteTime = 60
+
     private var timer: Timer?
     private var lastSignatures: [String: String] = [:]
+    private var lastFiredAt: [String: CFAbsoluteTime] = [:]
     private var isPrimed: Bool = false
     private var isPolling: Bool = false
 
@@ -68,6 +72,11 @@ final class MenuBarAXWatcher {
                 }
                 if let previous = self.lastSignatures[target.bundleID], previous != signature {
                     self.lastSignatures[target.bundleID] = signature
+                    let now = CFAbsoluteTimeGetCurrent()
+                    if let last = self.lastFiredAt[target.bundleID], now - last < Self.perAppCooldownSeconds {
+                        continue
+                    }
+                    self.lastFiredAt[target.bundleID] = now
                     self.onStatusTextChanged?(target.bundleID, target.appName, signature)
                 } else if self.lastSignatures[target.bundleID] == nil {
                     self.lastSignatures[target.bundleID] = signature
@@ -79,6 +88,7 @@ final class MenuBarAXWatcher {
 
     private nonisolated static func readExtrasSignature(for pid: pid_t) -> String? {
         let appElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appElement, 0.25)
         var extrasRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, "AXExtrasMenuBar" as CFString, &extrasRef) == .success,
               let extrasRef else {
@@ -93,17 +103,27 @@ final class MenuBarAXWatcher {
         }
 
         let parts: [String] = children.compactMap { item in
-            let title = copyString(item, kAXTitleAttribute)
-            let desc = copyString(item, kAXDescriptionAttribute)
-            let value = copyString(item, kAXValueAttribute)
-            let combined = [title, desc, value]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-            return combined.isEmpty ? nil : combined
+            AXUIElementSetMessagingTimeout(item, 0.25)
+            return signatureComponent(
+                description: copyString(item, kAXDescriptionAttribute),
+                identifier: copyString(item, kAXIdentifierAttribute)
+            )
         }
 
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Builds a change signature that ignores live readouts. Titles/values of status items are often
+    /// tickers (network speed, CPU, timers), so only the description/identifier are used, and digits are
+    /// folded so "3 updates" → "4 updates" style counters don't fire either.
+    nonisolated static func signatureComponent(description: String?, identifier: String?) -> String? {
+        let combined = [description, identifier]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !combined.isEmpty else { return nil }
+        let folded = combined.replacingOccurrences(of: "[0-9]+([.,:][0-9]+)*", with: "#", options: .regularExpression)
+        return folded
     }
 
     private nonisolated static func copyString(_ element: AXUIElement, _ attr: String) -> String? {

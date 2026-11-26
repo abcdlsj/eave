@@ -10,6 +10,9 @@ final class NotchStateMachine {
     private(set) var ambientIndicators: [AmbientIndicator] = []
     private(set) var isHovering: Bool = false
 
+    /// Upper bound on concurrent ongoing signals; the oldest is evicted beyond this.
+    static let maxAmbientIndicators = 16
+
     private var peekDismissTask: Task<Void, Never>?
     private var ambientExpiryTasks: [String: Task<Void, Never>] = [:]
 
@@ -25,6 +28,8 @@ final class NotchStateMachine {
     func dismissPeek() {
         peekDismissTask?.cancel()
         peekDismissTask = nil
+        // The pointer may still rest where the wings were; a stale flag would block the next peek's timeout.
+        isHovering = false
         if case .peek = state {
             transitionToRestingState()
         }
@@ -35,6 +40,11 @@ final class NotchStateMachine {
             ambientIndicators[index] = indicator
         } else {
             ambientIndicators.append(indicator)
+            while ambientIndicators.count > Self.maxAmbientIndicators {
+                let evicted = ambientIndicators.removeFirst()
+                ambientExpiryTasks[evicted.id]?.cancel()
+                ambientExpiryTasks[evicted.id] = nil
+            }
         }
 
         scheduleAmbientExpiryIfNeeded(for: indicator)
@@ -88,6 +98,7 @@ final class NotchStateMachine {
     // MARK: - Private
 
     private func transitionToRestingState() {
+        isHovering = false
         if ambientIndicators.isEmpty {
             state = .idle
         } else {

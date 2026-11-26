@@ -41,7 +41,15 @@ final class SignalHub {
             menuBarAXWatcher.start(interval: 4.0)
         } else {
             menuBarAXWatcher.stop()
-            stateMachine.dismissPeek()
+            // Only retract app-notification alerts; script/app signals are governed by `enableNotchBridge`.
+            if case .peek(let alert) = stateMachine.state, alert.source != .bridge {
+                stateMachine.dismissPeek()
+            }
+        }
+        if !settings.enableNotchBridge {
+            if case .peek(let alert) = stateMachine.state, alert.source == .bridge {
+                stateMachine.dismissPeek()
+            }
             stateMachine.clearAllAmbient()
         }
     }
@@ -92,7 +100,19 @@ final class SignalHub {
         }
         if let bundleID = indicator.bundleIdentifier {
             activateApplication(bundleIdentifier: bundleID)
+            return
         }
+        // No destination: a click acknowledges and dismisses the ongoing signal.
+        stateMachine.removeAmbient(id: indicator.id)
+    }
+
+    func dismissAmbient(_ indicator: AmbientIndicator) {
+        stateMachine.removeAmbient(id: indicator.id)
+    }
+
+    func dismissAllSignals() {
+        stateMachine.dismissPeek()
+        stateMachine.clearAllAmbient()
     }
 
     // MARK: - Wiring
@@ -159,9 +179,11 @@ final class SignalHub {
         switch payload.mode {
         case .clear:
             stateMachine.removeAmbient(id: key)
-            stateMachine.dismissPeek()
+            // Only retract the peek this sender owns; never someone else's alert.
+            if case .peek(let alert) = stateMachine.state, alert.id == key {
+                stateMachine.dismissPeek()
+            }
         case .ambient:
-            guard settings.enableNotchPeek else { return }
             stateMachine.upsertAmbient(
                 AmbientIndicator(
                     id: key,
@@ -178,7 +200,6 @@ final class SignalHub {
                 )
             )
         case .peek:
-            guard settings.enableNotchPeek else { return }
             // Replacing an active ambient signal of the same id (e.g. "running" -> "done") cleanly clears it.
             stateMachine.removeAmbient(id: key)
             let alert = NotchAlert(

@@ -97,7 +97,16 @@ final class DockBadgeMonitor {
     }
 
     func poll() {
-        guard !isPolling, AXIsProcessTrusted() else { return }
+        guard !isPolling else { return }
+        guard AXIsProcessTrusted() else {
+            // Permission revoked at runtime: drop stale badges once so the Second Row stops showing them.
+            if isPrimed || !previousBadges.isEmpty {
+                isPrimed = false
+                previousBadges = [:]
+                onBadgesChanged?(DockBadgeDiffEngine.DiffResult(newlyTriggered: [], clearedBundleIDs: []), [:])
+            }
+            return
+        }
         guard let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier else {
             return
         }
@@ -118,6 +127,9 @@ final class DockBadgeMonitor {
             }.value
             guard let self else { return }
             self.isPolling = false
+            // A failed Dock read (Dock restarting, AX timeout) is not an empty Dock; skip this round
+            // instead of treating it as "all badges cleared" and re-firing every badge next time.
+            guard let current else { return }
             self.processPollResult(current: current, watched: watched)
         }
     }
@@ -150,9 +162,10 @@ final class DockBadgeMonitor {
     private nonisolated static func readCurrentDockBadges(
         dockPID: pid_t,
         runningNameMap: [String: String]
-    ) -> [String: DockBadgeSnapshot] {
+    ) -> [String: DockBadgeSnapshot]? {
         let dockElement = AXUIElementCreateApplication(dockPID)
-        guard let children = copyChildren(of: dockElement) else { return [:] }
+        AXUIElementSetMessagingTimeout(dockElement, 0.5)
+        guard let children = copyChildren(of: dockElement) else { return nil }
 
         var results: [String: DockBadgeSnapshot] = [:]
         for child in children {
