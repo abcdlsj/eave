@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Refined monochrome macOS keyboard shortcut recorder with crisp sculpted physical keycaps.
 struct HotKeyRecorderView: View {
+    @Environment(\.eaveHairline) private var hairline
     let combo: KeyCombo?
     let onChange: (KeyCombo?) -> Void
 
@@ -63,7 +64,7 @@ struct HotKeyRecorderView: View {
                             isRecording
                                 ? Color.primary.opacity(0.45)
                                 : Color.primary.opacity(isHovered ? 0.16 : 0.09),
-                            lineWidth: isRecording ? 1.0 : 0.65
+                            lineWidth: isRecording ? 1.0 : hairline
                         )
                 )
             }

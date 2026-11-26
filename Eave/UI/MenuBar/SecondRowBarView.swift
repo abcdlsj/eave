@@ -463,7 +463,7 @@ private struct SecondRowItemTile: View {
                             .padding(.vertical, 1)
                             .background(
                                 Capsule()
-                                    .fill(Color(red: 1.0, green: 0.27, blue: 0.23))
+                                    .fill(Color.red)
                             )
                             .offset(x: 5, y: -3 + magnification.liftY)
                     }

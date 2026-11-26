@@ -255,6 +255,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
 }
 
 struct MenuBarSearchView: View {
+    @Environment(\.eaveHairline) private var hairline
     @Bindable var controller: MenuBarSearchController
     @FocusState private var isFieldFocused: Bool
     @Namespace private var filterNamespace
@@ -314,7 +315,7 @@ struct MenuBarSearchView: View {
 
             Rectangle()
                 .fill(Color.primary.opacity(0.075))
-                .frame(height: 0.6)
+                .frame(height: hairline)
 
             // Results list
             let items = controller.filteredItems
@@ -372,7 +373,7 @@ struct MenuBarSearchView: View {
 
             Rectangle()
                 .fill(Color.primary.opacity(0.075))
-                .frame(height: 0.6)
+                .frame(height: hairline)
 
             // Minimalist keycap footer
             HStack(spacing: 12) {

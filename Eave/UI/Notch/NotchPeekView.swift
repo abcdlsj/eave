@@ -30,7 +30,7 @@ struct NotchPeekView: View {
             return Color(eaveHex: hex)
         }
         if alert.source == .dockBadge {
-            return Color(red: 1.0, green: 0.27, blue: 0.23)
+            return Color.red
         }
         return Color.white.opacity(0.88)
     }

@@ -156,6 +156,7 @@ extension Color {
 }
 
 struct EaveGlassBackgroundModifier: ViewModifier {
+    @Environment(\.eaveHairline) private var hairline
     let cornerRadius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
 
@@ -182,7 +183,7 @@ struct EaveGlassBackgroundModifier: ViewModifier {
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 0.65
+                            lineWidth: hairline
                         )
                 )
         } else {
@@ -199,7 +200,7 @@ struct EaveGlassBackgroundModifier: ViewModifier {
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 0.65
+                            lineWidth: hairline
                         )
                 )
         }

@@ -4,6 +4,7 @@ import SwiftUI
 /// Restrained, monochrome editorial Settings studio for Eave (Apple Studio / Linear aesthetic).
 /// Synchronizes Light / Dark / System appearance live across sidebar, canvas, cards, and nested trays.
 struct SettingsView: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
 
     @State private var selectedTab: SettingsTab = .general
@@ -44,7 +45,7 @@ struct SettingsView: View {
 
             Rectangle()
                 .fill(EavePalette.divider(effectiveColorScheme))
-                .frame(width: 0.65)
+                .frame(width: hairline)
 
             ScrollView {
                 detailPane
@@ -107,8 +108,8 @@ struct SettingsView: View {
                     Circle()
                         .fill(
                             coordinator.permissions.hasAccessibility
-                                ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                ? Color.green
+                                : Color.orange
                         )
                         .frame(width: 6.5, height: 6.5)
 
@@ -137,7 +138,7 @@ struct SettingsView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                        .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                        .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
                 )
                 .padding(.horizontal, 11)
                 .padding(.bottom, 14)
@@ -230,6 +231,7 @@ struct SettingsView: View {
 // MARK: - General Tab
 
 private struct GeneralSettingsTab: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
     @Bindable var settings: EaveSettings
     @Environment(\.colorScheme) private var colorScheme
@@ -572,8 +574,8 @@ private struct GeneralSettingsTab: View {
                             Circle()
                                 .fill(
                                     coordinator.permissions.hasAccessibility
-                                        ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                        : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                        ? Color.green
+                                        : Color.orange
                                 )
                                 .frame(width: 6, height: 6)
                             Text(coordinator.permissions.hasAccessibility ? "Granted" : "Not Granted")
@@ -689,7 +691,7 @@ private struct GeneralSettingsTab: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                        .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
                 )
             }
         }
@@ -700,7 +702,7 @@ private struct GeneralSettingsTab: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.55)
+                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: hairline)
         )
     }
 
@@ -748,7 +750,7 @@ private struct GeneralSettingsTab: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7.5, style: .continuous)
-                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.6)
+                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
         )
     }
 }
@@ -756,6 +758,7 @@ private struct GeneralSettingsTab: View {
 // MARK: - Notch Tab
 
 private struct NotchSettingsTab: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
     @Bindable var settings: EaveSettings
     @Environment(\.colorScheme) private var colorScheme
@@ -945,7 +948,7 @@ private struct NotchSettingsTab: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.6)
+                            .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
                     )
 
                 HStack {
@@ -1010,7 +1013,7 @@ private struct NotchSettingsTab: View {
                     .frame(height: 62)
                     .overlay(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+                            .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: hairline)
                     )
 
                 // Miniature hardware notch silhouette
@@ -1072,7 +1075,7 @@ private struct NotchSettingsTab: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
         )
     }
 

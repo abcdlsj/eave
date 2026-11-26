@@ -43,6 +43,13 @@ extension AppAppearanceMode {
     }
 }
 
+// MARK: - Hairlines
+
+extension EnvironmentValues {
+    /// One physical pixel at the current display scale (0.5pt on Retina, 1pt on 1x displays).
+    var eaveHairline: CGFloat { 1 / max(displayScale, 1) }
+}
+
 // MARK: - Unified Motion Language
 
 /// Curated spring and easing curves tuned for 120Hz ProMotion macOS displays.
@@ -295,6 +302,7 @@ struct EaveSecondaryButtonStyle: ButtonStyle {
 }
 
 private struct EaveSecondaryButtonBody: View {
+    @Environment(\.eaveHairline) private var hairline
     let configuration: ButtonStyle.Configuration
     let compact: Bool
     @State private var isHovered = false
@@ -323,7 +331,7 @@ private struct EaveSecondaryButtonBody: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: compact ? 6 : 7.5, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(strokeOpacity), lineWidth: 0.65)
+                    .strokeBorder(Color.primary.opacity(strokeOpacity), lineWidth: hairline)
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
@@ -336,6 +344,7 @@ private struct EaveSecondaryButtonBody: View {
 
 /// Minimalist macOS keyboard keycap with crisp hairline bevel.
 struct EaveKeycap: View {
+    @Environment(\.eaveHairline) private var hairline
     let label: String
     var fontSize: CGFloat = 10.5
     var horizontalPadding: CGFloat = 5.5
@@ -361,7 +370,7 @@ struct EaveKeycap: View {
                         isDarkSurface
                             ? Color.white.opacity(isIncreased ? 0.32 : 0.14)
                             : Color.primary.opacity(isIncreased ? 0.30 : 0.12),
-                        lineWidth: 0.55
+                        lineWidth: hairline
                     )
             )
     }
@@ -370,6 +379,7 @@ struct EaveKeycap: View {
 // MARK: - Editorial Settings Card & Nested Sub-Settings Primitives
 
 struct EaveSettingsCard<Content: View>: View {
+    @Environment(\.eaveHairline) private var hairline
     let title: String?
     let subtitle: String?
     @ViewBuilder let content: () -> Content
@@ -416,7 +426,7 @@ struct EaveSettingsCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(colorScheme, contrast: contrast), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(colorScheme, contrast: contrast), lineWidth: hairline)
             )
         }
     }
@@ -425,6 +435,7 @@ struct EaveSettingsCard<Content: View>: View {
 /// Recessed nested container for secondary / dependent settings beneath a parent toggle,
 /// giving unmistakable visual hierarchy without noisy flat dividers.
 struct EaveSettingsSubSection<Content: View>: View {
+    @Environment(\.eaveHairline) private var hairline
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -439,7 +450,7 @@ struct EaveSettingsSubSection<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme, contrast: contrast), lineWidth: 0.6)
+                .strokeBorder(EavePalette.insetBorder(colorScheme, contrast: contrast), lineWidth: hairline)
         )
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
@@ -613,6 +624,7 @@ struct EaveSettingsSegmentedRow<Selection: Hashable, OptionView: View>: View {
 }
 
 struct EaveCardDivider: View {
+    @Environment(\.eaveHairline) private var hairline
     var leadingInset: CGFloat = 14
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -620,7 +632,7 @@ struct EaveCardDivider: View {
     var body: some View {
         Rectangle()
             .fill(EavePalette.divider(colorScheme, contrast: contrast))
-            .frame(height: 0.65)
+            .frame(height: hairline)
             .padding(.leading, leadingInset)
     }
 }

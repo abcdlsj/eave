@@ -4,6 +4,7 @@ import SwiftUI
 /// Uses ONE persistent pure-black obsidian shell whose geometry and corner curves continuously morph
 /// with liquid-spring physics across `idle`, `ambient`, and `peek` — strictly single-line hardware height.
 struct NotchContainerView: View {
+    @Environment(\.eaveHairline) private var hairline
     let stateMachine: NotchStateMachine
     let geometryProvider: () -> NotchGeometry
     let onAlertAction: (NotchAlert) -> Void
@@ -95,7 +96,7 @@ struct NotchContainerView: View {
         if let hex = accentHex, !hex.isEmpty {
             rimSweepColor = Color(eaveHex: hex)
         } else if source == .dockBadge {
-            rimSweepColor = Color(red: 1.0, green: 0.27, blue: 0.23)
+            rimSweepColor = Color.red
         } else {
             rimSweepColor = Color.white.opacity(0.85)
         }
@@ -171,7 +172,7 @@ struct NotchContainerView: View {
                             startPoint: .leading,
                             endPoint: .trailing
                         ),
-                        lineWidth: 0.6
+                        lineWidth: hairline
                     )
 
                 // One-shot arrival accent shimmer along the bottom rim (zero cost at rest).
@@ -205,7 +206,7 @@ struct NotchContainerView: View {
                                     startPoint: .top,
                                     endPoint: .bottom
                                 ),
-                                lineWidth: 0.6
+                                lineWidth: hairline
                             )
                     )
 
@@ -256,7 +257,7 @@ private struct NotchAmbientWingsView: View {
             return Color(eaveHex: hex)
         }
         if primary?.source == .dockBadge {
-            return Color(red: 1.0, green: 0.27, blue: 0.23)
+            return Color.red
         }
         return Color.white.opacity(0.86)
     }

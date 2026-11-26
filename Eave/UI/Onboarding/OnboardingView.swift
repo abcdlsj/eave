@@ -4,6 +4,7 @@ import SwiftUI
 /// Restrained, interactive 4-step first-launch walkthrough crafted in Eave's monochrome studio language.
 /// Introduces two-section menu bar hiding, hover reveal mode selection, optional Accessibility, and Notch signals.
 struct OnboardingView: View {
+    @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
     let onFinish: () -> Void
 
@@ -81,7 +82,7 @@ struct OnboardingView: View {
 
             Rectangle()
                 .fill(EavePalette.divider(effectiveColorScheme))
-                .frame(height: 0.65)
+                .frame(height: hairline)
 
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -106,7 +107,7 @@ struct OnboardingView: View {
 
             Rectangle()
                 .fill(EavePalette.divider(effectiveColorScheme))
-                .frame(height: 0.65)
+                .frame(height: hairline)
 
             footerBar
                 .padding(.horizontal, 28)
@@ -233,7 +234,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
             )
 
             HStack(spacing: 16) {
@@ -301,7 +302,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
             )
         }
     }
@@ -405,7 +406,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.55)
+                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
             )
 
             if mode == .secondRow {
@@ -431,7 +432,7 @@ struct OnboardingView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                        .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
                 )
                 .padding(.trailing, 18)
             } else {
@@ -447,7 +448,7 @@ struct OnboardingView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.55)
+                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
         )
     }
 
@@ -463,7 +464,7 @@ struct OnboardingView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(
                                 granted
-                                    ? Color(red: 0.20, green: 0.72, blue: 0.42).opacity(0.14)
+                                    ? Color.green.opacity(0.14)
                                     : EavePalette.pillFill(effectiveColorScheme)
                             )
                             .frame(width: 34, height: 34)
@@ -471,7 +472,7 @@ struct OnboardingView: View {
                             .font(.system(size: 14.5, weight: .medium))
                             .foregroundStyle(
                                 granted
-                                    ? Color(red: 0.20, green: 0.72, blue: 0.42)
+                                    ? Color.green
                                     : .primary.opacity(0.75)
                             )
                     }
@@ -484,8 +485,8 @@ struct OnboardingView: View {
                                 Circle()
                                     .fill(
                                         granted
-                                            ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                            : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                            ? Color.green
+                                            : Color.orange
                                     )
                                     .frame(width: 6, height: 6)
                                 Text(granted ? "Granted" : "Optional")
@@ -540,7 +541,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
             )
             .animation(EaveMotion.microSpring, value: granted)
 
@@ -561,7 +562,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                    .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
             )
         }
     }
@@ -589,7 +590,7 @@ struct OnboardingView: View {
                         .frame(height: 60)
                         .overlay(
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: 0.6)
+                                .strokeBorder(EavePalette.insetBorder(effectiveColorScheme), lineWidth: hairline)
                         )
 
                     HStack(spacing: 0) {
@@ -664,7 +665,7 @@ struct OnboardingView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(effectiveColorScheme), lineWidth: hairline)
             )
 
             EaveSettingsCard {
@@ -755,6 +756,7 @@ struct OnboardingView: View {
 // MARK: - Animated Menu Bar Hiding Stage (Step 1)
 
 private struct OnboardingMenuBarDemoStage: View {
+    @Environment(\.eaveHairline) private var hairline
     let colorScheme: ColorScheme
 
     /// 0 = expanded before drag, 1 = icon gliding left past dot, 2 = collapsed cleanly
@@ -848,7 +850,7 @@ private struct OnboardingMenuBarDemoStage: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: hairline)
             )
             .animation(EaveMotion.notchMorph, value: phase)
         }
@@ -859,7 +861,7 @@ private struct OnboardingMenuBarDemoStage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: hairline)
         )
         .onAppear {
             startAnimationLoop()
