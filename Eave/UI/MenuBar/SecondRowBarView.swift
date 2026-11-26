@@ -43,7 +43,7 @@ struct SecondRowLayoutMetrics: Equatable, Sendable {
                 visibleRows: 0,
                 isHorizontallyScrollable: false,
                 isVerticallyScrollable: false,
-                contentWidth: min(312, boundedMaxWidth),
+                contentWidth: min(420, boundedMaxWidth),
                 contentHeight: 46,
                 tileWidth: tileWidth,
                 tileHeight: tileHeight,
@@ -253,14 +253,32 @@ struct SecondRowBarView: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if controller.items.isEmpty {
-            HStack(spacing: 6) {
-                Text("Hold")
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nothing hidden yet")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.primary)
+                    HStack(spacing: 4) {
+                        Text("Click the Eave icon to show the • divider, then")
+                        EaveKeycap(label: "⌘", fontSize: 9.5, horizontalPadding: 4.5, verticalPadding: 1.5)
+                        Text("-drag icons left of it.")
+                    }
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                EaveKeycap(label: "⌘", fontSize: 9.5, horizontalPadding: 4.5, verticalPadding: 1.5)
-                Text("and drag icons left of the dot to hide")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                }
+                .accessibilityElement(children: .combine)
+
+                Spacer(minLength: 0)
+
+                if let showDivider = controller.onRequestShowDivider {
+                    Button("Show Divider") {
+                        controller.hide()
+                        showDivider()
+                    }
+                    .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                }
             }
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

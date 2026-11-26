@@ -55,6 +55,9 @@ final class SecondRowBarController {
 
     var onSelectItem: ((MenuBarItemInfo, MenuBarClickButton) -> Void)?
     var onRequestPermissions: (() -> Void)?
+    /// Expands the hidden section so the • divider is visible for ⌘-dragging. The empty state
+    /// shows a "Show Divider" button only when this is wired.
+    var onRequestShowDivider: (() -> Void)?
     var shouldDismissOnAppSwitch: (() -> Bool)?
 
     init() {

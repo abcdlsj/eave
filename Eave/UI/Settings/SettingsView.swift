@@ -1231,7 +1231,7 @@ private struct ShortcutsSettingsTab: View {
                 EaveCardDivider()
                 interactionRow(gesture: "Right-click icon", description: "In the Second Row, open an app's menu bar menu, e.g. Tailscale.")
                 EaveCardDivider()
-                interactionRow(gesture: "⌘ + Drag icon", description: "Move menu bar icons left of the dot divider to hide them.")
+                interactionRow(gesture: "⌘ + Drag icon", description: "Click the Eave icon to show the • divider, then ⌘-drag icons to its left to hide them.")
             }
         }
     }
