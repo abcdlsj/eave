@@ -320,12 +320,14 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(s1.hoverDisplayMode, .inline)
         XCTAssertEqual(s1.secondRowLayoutMode, .horizontalScroll)
         XCTAssertEqual(s1.secondRowItemsPerRow, EaveSettings.defaultSecondRowItemsPerRow)
+        XCTAssertEqual(s1.appearanceMode, .system)
 
         s1.rehideDelaySeconds = 12
         s1.expandOnEaveHover = false
         s1.hoverDisplayMode = .secondRow
         s1.secondRowLayoutMode = .multiRow
         s1.secondRowItemsPerRow = 6
+        s1.appearanceMode = .dark
         s1.addWatchedBundleID("com.example.one")
         s1.addWatchedBundleID("com.example.one")
         s1.addWatchedBundleID("  com.example.two  ")
@@ -336,6 +338,10 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(s2.hoverDisplayMode, .secondRow)
         XCTAssertEqual(s2.secondRowLayoutMode, .multiRow)
         XCTAssertEqual(s2.secondRowItemsPerRow, 6)
+        XCTAssertEqual(s2.appearanceMode, .dark)
+        XCTAssertNil(AppAppearanceMode.system.nsAppearance)
+        XCTAssertNotNil(AppAppearanceMode.light.nsAppearance)
+        XCTAssertNotNil(AppAppearanceMode.dark.nsAppearance)
         XCTAssertEqual(s2.watchedBundleIDs, ["com.example.one", "com.example.two"])
 
         // Clamping invariants for items per row
@@ -434,5 +440,24 @@ final class EaveCoreTests: XCTestCase {
                 cardScreenFrame: cardFrame
             )
         )
+    }
+
+    func testDockMagnificationCurve() {
+        XCTAssertEqual(EaveDockMagnification.resolve(index: 2, hoveredIndex: nil), .resting)
+
+        let primary = EaveDockMagnification.resolve(index: 2, hoveredIndex: 2)
+        XCTAssertTrue(primary.isPrimary)
+        XCTAssertGreaterThan(primary.scale, 1.1)
+        XCTAssertLessThan(primary.liftY, 0)
+
+        let leftNeighbor = EaveDockMagnification.resolve(index: 1, hoveredIndex: 2)
+        let rightNeighbor = EaveDockMagnification.resolve(index: 3, hoveredIndex: 2)
+        XCTAssertEqual(leftNeighbor, rightNeighbor)
+        XCTAssertFalse(leftNeighbor.isPrimary)
+        XCTAssertGreaterThan(leftNeighbor.scale, 1.0)
+        XCTAssertLessThan(leftNeighbor.scale, primary.scale)
+
+        let distant = EaveDockMagnification.resolve(index: 4, hoveredIndex: 2)
+        XCTAssertEqual(distant, .resting)
     }
 }

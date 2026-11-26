@@ -42,6 +42,7 @@ final class SecondRowBarController {
     private var presentationGeneration: UInt64 = 0
     private var lastAnchorFrame: CGRect?
     private var isPinnedForPreview: Bool = false
+    private var preferredAppearance: NSAppearance?
 
     private(set) var items: [CapturedMenuBarItem] = []
     private(set) var activeBadges: [String: String] = [:]
@@ -69,6 +70,11 @@ final class SecondRowBarController {
                 }
             }
         }
+    }
+
+    func applyAppearance(_ appearance: NSAppearance?) {
+        preferredAppearance = appearance
+        panel?.appearance = appearance
     }
 
     func tearDown() {
@@ -252,6 +258,7 @@ final class SecondRowBarController {
     private func ensurePanel(initialFrame: CGRect) -> SecondRowBarPanel {
         if let panel { return panel }
         let created = SecondRowBarPanel(contentRect: initialFrame)
+        created.appearance = preferredAppearance
         let hosting = NSHostingView(rootView: SecondRowBarView(controller: self))
         hosting.frame = NSRect(origin: .zero, size: initialFrame.size)
         hosting.autoresizingMask = [.width, .height]

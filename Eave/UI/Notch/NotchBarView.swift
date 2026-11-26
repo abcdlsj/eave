@@ -19,6 +19,7 @@ struct NotchBarView: View {
     let onClose: () -> Void
 
     @State private var showAllItems = false
+    @State private var hoveredTileIndex: Int?
 
     private var hiddenItems: [CapturedMenuBarItem] {
         items.filter { $0.info.section != .visible }
@@ -159,10 +160,19 @@ struct NotchBarView: View {
             ZStack {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 8) {
-                        ForEach(currentItems) { captured in
+                        ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, captured in
+                            let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredTileIndex)
                             NotchBarIconTile(
                                 captured: captured,
                                 badge: resolvedBadge(for: captured.info),
+                                magnification: mag,
+                                onHoverChanged: { hovering in
+                                    if hovering {
+                                        hoveredTileIndex = index
+                                    } else if hoveredTileIndex == index {
+                                        hoveredTileIndex = nil
+                                    }
+                                },
                                 onSelect: {
                                     EaveHaptics.tick()
                                     onSelectItem(captured.info)
@@ -234,9 +244,9 @@ private struct NotchBarSkeletonShelf: View {
 private struct NotchBarIconTile: View {
     let captured: CapturedMenuBarItem
     let badge: String?
+    let magnification: EaveDockMagnification
+    let onHoverChanged: (Bool) -> Void
     let onSelect: () -> Void
-
-    @State private var isHovered = false
 
     private var resolved: (image: NSImage?, symbolName: String?) {
         AppIconService.shared.resolveIconOnly(for: captured.info)
@@ -247,17 +257,14 @@ private struct NotchBarIconTile: View {
             VStack(spacing: 5) {
                 ZStack(alignment: .topTrailing) {
                     // Clean, restrained frosted neutral hover tile — zero garish color blobs.
-                    if isHovered {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white.opacity(0.085))
-                            .frame(width: 46, height: 46)
-                            .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                    }
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(magnification.isPrimary ? 0.085 : 0.0))
+                        .frame(width: 46, height: 46)
 
                     iconVisual
                         .frame(width: 46, height: 46)
-                        .scaleEffect(isHovered ? 1.09 : 1.0)
-                        .offset(y: isHovered ? -2 : 0)
+                        .scaleEffect(magnification.scale, anchor: .bottom)
+                        .offset(y: magnification.liftY)
 
                     if let badge, !badge.isEmpty {
                         Text(badge)
@@ -272,26 +279,25 @@ private struct NotchBarIconTile: View {
                                     .fill(Color(red: 1.0, green: 0.27, blue: 0.23))
                                     .overlay(Capsule().strokeBorder(Color.black, lineWidth: 1.25))
                             )
-                            .offset(x: 3, y: isHovered ? -5 : -3)
+                            .offset(x: 3, y: -3 + magnification.liftY)
                     }
                 }
                 .frame(width: 48, height: 48)
 
                 Text(captured.info.appName)
-                    .font(.system(size: 10, weight: isHovered ? .medium : .regular))
-                    .foregroundStyle(.white.opacity(isHovered ? 0.94 : 0.48))
+                    .font(.system(size: 10, weight: magnification.isPrimary ? .medium : .regular))
+                    .foregroundStyle(.white.opacity(magnification.isPrimary ? 0.94 : 0.48))
                     .lineLimit(1)
                     .frame(width: 60)
             }
             .contentShape(Rectangle())
+            .animation(EaveMotion.dockWave, value: magnification)
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.89, pressedOpacity: 0.85))
         .onHover { hovering in
-            withAnimation(EaveMotion.microSpring) {
-                isHovered = hovering
-            }
+            onHoverChanged(hovering)
         }
-        .help(captured.info.searchableText)
+        .accessibilityLabel(captured.info.searchableText)
     }
 
     @ViewBuilder

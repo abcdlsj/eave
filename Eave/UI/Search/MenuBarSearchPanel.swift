@@ -54,6 +54,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private var panel: MenuBarSearchWindow?
     private var keyMonitor: Any?
     private var closeTask: Task<Void, Never>?
+    private var preferredAppearance: NSAppearance?
 
     var query: String = "" {
         didSet { selectedIndex = 0 }
@@ -83,6 +84,11 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         }
     }
 
+    func applyAppearance(_ appearance: NSAppearance?) {
+        preferredAppearance = appearance
+        panel?.appearance = appearance
+    }
+
     func toggle() {
         if isVisible {
             close()
@@ -104,6 +110,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         if panel == nil {
             let rect = NSRect(x: 0, y: 0, width: 556, height: 416)
             let window = MenuBarSearchWindow(contentRect: rect)
+            window.appearance = preferredAppearance
             window.delegate = self
             let view = MenuBarSearchView(controller: self)
             window.contentView = NSHostingView(rootView: view)

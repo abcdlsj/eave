@@ -225,7 +225,34 @@ private struct GeneralSettingsTab: View {
                 subtitle: "Menu bar sections, auto-rehide behavior, and global icon spacing."
             )
 
-            EaveSettingsCard("Startup & Sections") {
+            EaveSettingsCard("Startup & Appearance") {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Appearance")
+                            .font(.system(size: 13))
+                        Text("Follow macOS Day/Night automatically, or lock to Light / Dark.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 10)
+
+                    Picker("", selection: $settings.appearanceMode) {
+                        ForEach(AppAppearanceMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 196)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10.5)
+                .onChange(of: settings.appearanceMode) { _, _ in
+                    EaveHaptics.tick()
+                    coordinator.applyAppearance()
+                }
+                EaveCardDivider()
                 EaveSettingsToggleRow(
                     "Launch Eave at login",
                     subtitle: "Start quietly in the menu bar when you sign in.",

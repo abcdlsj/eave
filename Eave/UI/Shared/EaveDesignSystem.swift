@@ -15,8 +15,32 @@ enum EaveMotion {
     static let pressSpring = Animation.spring(response: 0.15, dampingFraction: 0.72)
     /// Silky hover transitions without sluggishness.
     static let hover = Animation.easeOut(duration: 0.13)
+    /// Restrained, tactile macOS Dock lift & neighbor wave spring.
+    static let dockWave = Animation.spring(response: 0.24, dampingFraction: 0.72)
     /// Smooth settings tab transition.
     static let tabSwitch = Animation.spring(response: 0.26, dampingFraction: 0.88)
+}
+
+/// Subtle macOS Dock-style proximity magnification curve for icon shelves.
+/// Intentionally restrained so icons feel responsive and alive without distracting distortion.
+struct EaveDockMagnification: Equatable, Sendable {
+    let scale: CGFloat
+    let liftY: CGFloat
+    let isPrimary: Bool
+
+    static let resting = EaveDockMagnification(scale: 1.0, liftY: 0.0, isPrimary: false)
+
+    static func resolve(index: Int, hoveredIndex: Int?) -> EaveDockMagnification {
+        guard let hoveredIndex else { return .resting }
+        switch abs(index - hoveredIndex) {
+        case 0:
+            return EaveDockMagnification(scale: 1.18, liftY: -3.5, isPrimary: true)
+        case 1:
+            return EaveDockMagnification(scale: 1.06, liftY: -1.0, isPrimary: false)
+        default:
+            return .resting
+        }
+    }
 }
 
 // MARK: - Subtle Trackpad Haptics

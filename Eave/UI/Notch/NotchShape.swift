@@ -179,16 +179,28 @@ extension Color {
 
 struct EaveGlassBackgroundModifier: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var strokeColors: [Color] {
+        if colorScheme == .dark {
+            return [Color.white.opacity(0.22), Color.white.opacity(0.06)]
+        }
+        return [Color.black.opacity(0.11), Color.black.opacity(0.05)]
+    }
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(macOS 26.0, *) {
             content
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .background(
+                    shape.fill(colorScheme == .dark ? Color.black.opacity(0.22) : Color.white.opacity(0.45))
+                )
+                .glassEffect(.regular, in: shape)
                 .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    shape
                         .strokeBorder(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)],
+                                colors: strokeColors,
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
@@ -199,13 +211,13 @@ struct EaveGlassBackgroundModifier: ViewModifier {
             content
                 .background(
                     .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    in: shape
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    shape
                         .strokeBorder(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
+                                colors: strokeColors,
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),

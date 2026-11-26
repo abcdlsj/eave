@@ -57,6 +57,7 @@ final class AppCoordinator {
     }
 
     func start() {
+        applyAppearance()
         setupNotchPanel()
         wireMenuBarCallbacks()
         wireSecondRowBar()
@@ -68,6 +69,14 @@ final class AppCoordinator {
         eventMonitor.start()
         signalHub.start()
         startHiddenDiscoverySync()
+    }
+
+    func applyAppearance() {
+        let appearance = settings.appearanceMode.nsAppearance
+        NSApp.appearance = appearance
+        settingsWindow?.appearance = appearance
+        secondRowBarController.applyAppearance(appearance)
+        searchController.applyAppearance(appearance)
     }
 
     func stop() {
@@ -167,6 +176,7 @@ final class AppCoordinator {
             window.titlebarAppearsTransparent = true
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
+            window.appearance = settings.appearanceMode.nsAppearance
             window.center()
             window.contentView = NSHostingView(rootView: SettingsView(coordinator: self))
             settingsWindow = window

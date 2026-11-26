@@ -19,11 +19,11 @@ struct SecondRowLayoutMetrics: Equatable, Sendable {
     let verticalPadding: CGFloat
 
     static let tileWidth: CGFloat = 54
-    static let tileHeight: CGFloat = 52
+    static let tileHeight: CGFloat = 54
     static let horizontalSpacing: CGFloat = 4
     static let verticalSpacing: CGFloat = 4
     static let horizontalPadding: CGFloat = 10
-    static let verticalPadding: CGFloat = 8
+    static let verticalPadding: CGFloat = 9
     static let maxVisibleRows: Int = 4
     static let defaultMaxContentWidth: CGFloat = 760
 
@@ -201,6 +201,14 @@ struct SecondRowLayoutMetrics: Equatable, Sendable {
 struct SecondRowBarView: View {
     let controller: SecondRowBarController
 
+    private struct GridPosition: Equatable {
+        let row: Int
+        let col: Int
+    }
+
+    @State private var hoveredRowIndex: Int?
+    @State private var hoveredGridPos: GridPosition?
+
     private var metrics: SecondRowLayoutMetrics {
         SecondRowLayoutMetrics.resolve(
             itemCount: controller.items.count,
@@ -214,6 +222,12 @@ struct SecondRowBarView: View {
         cardBody
             .frame(width: metrics.contentWidth, height: metrics.contentHeight)
             .eaveGlassSurface(cornerRadius: 14)
+            .onChange(of: controller.isVisible) { _, visible in
+                if !visible {
+                    hoveredRowIndex = nil
+                    hoveredGridPos = nil
+                }
+            }
     }
 
     @ViewBuilder
@@ -254,12 +268,21 @@ struct SecondRowBarView: View {
         } else if controller.layoutMode == .horizontalScroll {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: metrics.horizontalSpacing) {
-                    ForEach(controller.items) { captured in
+                    ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, captured in
+                        let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredRowIndex)
                         SecondRowItemTile(
                             captured: captured,
                             badge: resolvedBadge(for: captured.info),
                             width: metrics.tileWidth,
                             height: metrics.tileHeight,
+                            magnification: mag,
+                            onHoverChanged: { hovering in
+                                if hovering {
+                                    hoveredRowIndex = index
+                                } else if hoveredRowIndex == index {
+                                    hoveredRowIndex = nil
+                                }
+                            },
                             onSelect: {
                                 EaveHaptics.tick()
                                 controller.selectItem(captured.info)
@@ -283,14 +306,25 @@ struct SecondRowBarView: View {
     private var multiRowGrid: some View {
         let rows = SecondRowLayoutMetrics.chunkedRows(controller.items, itemsPerRow: controller.itemsPerRow)
         return VStack(alignment: .leading, spacing: metrics.verticalSpacing) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, rowItems in
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowItems in
+                let activeCol = (hoveredGridPos?.row == rowIndex) ? hoveredGridPos?.col : nil
                 HStack(spacing: metrics.horizontalSpacing) {
-                    ForEach(rowItems) { captured in
+                    ForEach(Array(rowItems.enumerated()), id: \.element.id) { colIndex, captured in
+                        let pos = GridPosition(row: rowIndex, col: colIndex)
+                        let mag = EaveDockMagnification.resolve(index: colIndex, hoveredIndex: activeCol)
                         SecondRowItemTile(
                             captured: captured,
                             badge: resolvedBadge(for: captured.info),
                             width: metrics.tileWidth,
                             height: metrics.tileHeight,
+                            magnification: mag,
+                            onHoverChanged: { hovering in
+                                if hovering {
+                                    hoveredGridPos = pos
+                                } else if hoveredGridPos == pos {
+                                    hoveredGridPos = nil
+                                }
+                            },
                             onSelect: {
                                 EaveHaptics.tick()
                                 controller.selectItem(captured.info)
@@ -343,9 +377,18 @@ private struct SecondRowItemTile: View {
     let badge: String?
     let width: CGFloat
     let height: CGFloat
+    let magnification: EaveDockMagnification
+    let onHoverChanged: (Bool) -> Void
     let onSelect: () -> Void
 
-    @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var hoverFillColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(magnification.isPrimary ? 0.12 : 0.0)
+        }
+        return Color.black.opacity(magnification.isPrimary ? 0.075 : 0.0)
+    }
 
     var body: some View {
         let resolved = AppIconService.shared.resolveIconOnly(for: captured.info)
@@ -354,7 +397,8 @@ private struct SecondRowItemTile: View {
                 ZStack(alignment: .topTrailing) {
                     iconVisual(image: resolved.image, symbolName: resolved.symbolName)
                         .frame(width: 30, height: 30)
-                        .scaleEffect(isHovered ? 1.07 : 1.0)
+                        .scaleEffect(magnification.scale, anchor: .bottom)
+                        .offset(y: magnification.liftY)
 
                     if let badge, !badge.isEmpty {
                         Text(badge)
@@ -367,13 +411,14 @@ private struct SecondRowItemTile: View {
                                 Capsule()
                                     .fill(Color(red: 1.0, green: 0.27, blue: 0.23))
                             )
-                            .offset(x: 5, y: -3)
+                            .offset(x: 5, y: -3 + magnification.liftY)
                     }
                 }
+                .padding(.top, 2)
 
                 Text(captured.info.appName)
-                    .font(.system(size: 9.5, weight: isHovered ? .medium : .regular))
-                    .foregroundStyle(.primary.opacity(isHovered ? 0.95 : 0.68))
+                    .font(.system(size: 9.5, weight: magnification.isPrimary ? .medium : .regular))
+                    .foregroundStyle(.primary.opacity(magnification.isPrimary ? 0.96 : 0.68))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: width - 6)
@@ -381,15 +426,14 @@ private struct SecondRowItemTile: View {
             .frame(width: width, height: height)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.primary.opacity(isHovered ? 0.10 : 0.0))
+                    .fill(hoverFillColor)
             )
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .animation(EaveMotion.dockWave, value: magnification)
         }
-        .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.90, pressedOpacity: 0.85))
+        .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.88, pressedOpacity: 0.84))
         .onHover { hovering in
-            withAnimation(EaveMotion.hover) {
-                isHovered = hovering
-            }
+            onHoverChanged(hovering)
         }
         .accessibilityLabel(captured.info.searchableText)
     }

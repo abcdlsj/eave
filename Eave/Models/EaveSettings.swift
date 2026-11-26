@@ -25,6 +25,7 @@ final class EaveSettings {
         static let hoverDisplayMode = "eave.hoverDisplayMode"
         static let secondRowLayoutMode = "eave.secondRowLayoutMode"
         static let secondRowItemsPerRow = "eave.secondRowItemsPerRow"
+        static let appearanceMode = "eave.appearanceMode"
         static let useNotchBarOnToggle = "eave.useNotchBarOnToggle"
 
         static let enableNotchPeek = "eave.enableNotchPeek"
@@ -86,6 +87,10 @@ final class EaveSettings {
             }
             defaults.set(clamped, forKey: Key.secondRowItemsPerRow)
         }
+    }
+
+    var appearanceMode: AppAppearanceMode {
+        didSet { defaults.set(appearanceMode.rawValue, forKey: Key.appearanceMode) }
     }
 
     /// When enabled, clicking the Eave anchor icon opens the Notch Bar drawer instead of expanding inline.
@@ -161,6 +166,12 @@ final class EaveSettings {
             self.secondRowItemsPerRow = Self.clampedItemsPerRow(storedPerRow)
         } else {
             self.secondRowItemsPerRow = Self.defaultSecondRowItemsPerRow
+        }
+        if let rawAppearance = defaults.string(forKey: Key.appearanceMode),
+           let appearance = AppAppearanceMode(rawValue: rawAppearance) {
+            self.appearanceMode = appearance
+        } else {
+            self.appearanceMode = .system
         }
         self.useNotchBarOnToggle = defaults.object(forKey: Key.useNotchBarOnToggle) as? Bool ?? false
 
