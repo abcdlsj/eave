@@ -425,7 +425,7 @@ private struct GeneralSettingsTab: View {
                         Text("System icon spacing")
                             .font(.system(size: 13))
                             .foregroundStyle(.primary)
-                        Text("Tune NSStatusItemSpacing · apps apply on relaunch; system icons require re-login.")
+                        Text("Adjust the gap between menu bar icons. Apps update after relaunch; system icons after you log out.")
                             .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
                     }
@@ -759,7 +759,7 @@ private struct NotchSettingsTab: View {
         VStack(alignment: .leading, spacing: 18) {
             EavePageHeader(
                 title: "Notch",
-                subtitle: "Pure-obsidian Peek notifications and edge indicators fused to your hardware notch."
+                subtitle: "Quiet alerts and ongoing indicators shown around the top center of your screen."
             )
 
             notchPreviewStage
@@ -773,7 +773,7 @@ private struct NotchSettingsTab: View {
         EaveSettingsCard("Notifications") {
             EaveSettingsToggleRow(
                 "Show hidden app notifications",
-                subtitle: "Unfurls Peek wings, subtle edge badges, and background status alerts around the camera.",
+                subtitle: "Briefly shows the app icon and unread count when a hidden or watched app gets a new badge.",
                 isOn: $settings.enableNotchPeek.animation(EaveMotion.microSpring)
             )
             .onChange(of: settings.enableNotchPeek) { _, _ in
@@ -783,8 +783,8 @@ private struct NotchSettingsTab: View {
             if settings.enableNotchPeek {
                 EaveSettingsSubSection {
                     EaveSettingsSliderRow(
-                        "Peek duration",
-                        subtitle: "How long a notification unfurls before smoothly retracting.",
+                        "Alert duration",
+                        subtitle: "How long a notch alert stays visible before it hides.",
                         value: $settings.peekDurationSeconds,
                         in: 2.0...10.0,
                         step: 0.5,
@@ -825,7 +825,7 @@ private struct NotchSettingsTab: View {
                 .menuStyle(.borderedButton)
                 .fixedSize()
 
-                TextField("or bundle identifier...", text: $newBundleID)
+                TextField("Or enter an app ID (com.example.app)…", text: $newBundleID)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
 
@@ -855,10 +855,10 @@ private struct NotchSettingsTab: View {
     }
 
     private var notchBridgeCard: some View {
-        EaveSettingsCard("NotchBridge") {
+        EaveSettingsCard("Developer · Script & App Signals", subtitle: "NotchBridge local automation API") {
             EaveSettingsToggleRow(
-                "Accept local CLI & app signals",
-                subtitle: "Push icon, accent dot color, optional numeric badge, and click callback via eave:// or DistributedNotification.",
+                "Accept signals from scripts and apps",
+                subtitle: "Lets local scripts, CLIs, and apps show an icon, colored dot, or count in the notch, with an optional click link.",
                 isOn: $settings.enableNotchBridge.animation(EaveMotion.microSpring)
             )
 
@@ -926,7 +926,7 @@ private struct NotchSettingsTab: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: 1.5) {
-                        Text("DistributedNotification")
+                        Text("App notification name")
                             .font(.system(size: 10.5, weight: .medium))
                             .foregroundStyle(.secondary)
                         Text(NotchBridge.distributedNotificationName.rawValue)
@@ -1027,7 +1027,7 @@ private struct NotchSettingsTab: View {
             }
 
             HStack(spacing: 8) {
-                Button("Preview Notch Peek") {
+                Button("Preview Notch Alert") {
                     coordinator.signalHub.sendTestPeek()
                 }
                 .buttonStyle(EaveProminentButtonStyle())
@@ -1035,7 +1035,7 @@ private struct NotchSettingsTab: View {
 
                 Spacer()
 
-                Text(settings.enableNotchPeek ? "Active · \(String(format: "%.1fs", settings.peekDurationSeconds)) peek" : "Notifications paused")
+                Text(settings.enableNotchPeek ? "On · alerts show for \(String(format: "%.1fs", settings.peekDurationSeconds))" : "Alerts paused")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
@@ -1229,7 +1229,7 @@ private struct ShortcutsSettingsTab: View {
                 EaveCardDivider()
                 interactionRow(gesture: "Hover Eave", description: "Reveal hidden items inline or in the floating Second Row.")
                 EaveCardDivider()
-                interactionRow(gesture: "Right-click tile", description: "Forward right-click directly to menu-bar utilities like Tailscale.")
+                interactionRow(gesture: "Right-click icon", description: "In the Second Row, open an app's menu bar menu, e.g. Tailscale.")
                 EaveCardDivider()
                 interactionRow(gesture: "⌘ + Drag icon", description: "Move menu bar icons left of the dot divider to hide them.")
             }

@@ -240,7 +240,7 @@ struct MenuBarSearchView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(controller.query.isEmpty ? .secondary : .primary)
 
-                TextField("Search menu bar items...", text: $controller.query)
+                TextField("Search menu bar items…", text: $controller.query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16, weight: .regular))
                     .focused($isFieldFocused)
@@ -351,7 +351,7 @@ struct MenuBarSearchView: View {
                 keyHint("↩", label: "Open")
                 keyHint("⎋", label: "Close")
                 Spacer()
-                Text("\(items.count) items")
+                Text(items.count == 1 ? "1 item" : "\(items.count) items")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()

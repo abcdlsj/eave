@@ -44,11 +44,11 @@ struct OnboardingView: View {
             case .organize:
                 "Hold ⌘ and drag any menu bar icon to the left of Eave's dot divider to keep it out of sight."
             case .reveal:
-                "Hover over the Eave icon on any display to peek at hidden apps without disrupting your workflow."
+                "Hover over the Eave icon on any display to see hidden apps without disrupting your workflow."
             case .privacy:
                 "Core hiding needs zero permissions. Accessibility is optional, local-only, and Screen Recording is never requested."
             case .notch:
-                "When a hidden app gets a new Dock badge or CLI hook, Eave unfurls a single-line icon & indicator beside the camera."
+                "When a hidden app gets a new Dock badge or a script sends a signal, Eave shows a small icon and indicator beside the camera."
             }
         }
 
@@ -526,7 +526,7 @@ struct OnboardingView: View {
                     )
                     privacyBenefitRow(
                         symbol: "bell.badge",
-                        text: "Automatic Notch Peek alerts when hidden apps get unread Dock badges"
+                        text: "Automatic notch alerts when hidden apps get unread Dock badges"
                     )
                 }
                 .padding(.horizontal, 14)
@@ -643,7 +643,7 @@ struct OnboardingView: View {
                         HStack(spacing: 5) {
                             Image(systemName: previewSentFeedback ? "checkmark" : "sparkles")
                                 .font(.system(size: 10, weight: .semibold))
-                            Text(previewSentFeedback ? "Peek Triggered" : "Preview Notch Peek")
+                            Text(previewSentFeedback ? "Alert Sent" : "Preview Notch Alert")
                         }
                     }
                     .buttonStyle(EaveSecondaryButtonStyle())
@@ -669,7 +669,7 @@ struct OnboardingView: View {
             EaveSettingsCard {
                 EaveSettingsToggleRow(
                     "Show hidden app notifications in Notch",
-                    subtitle: "Briefly peeks around the notch when a hidden or pinned app has unread badges.",
+                    subtitle: "Briefly shows an alert when a hidden or watched app has unread badges.",
                     isOn: $settings.enableNotchPeek.animation(EaveMotion.microSpring)
                 )
                 .onChange(of: settings.enableNotchPeek) { _, _ in
