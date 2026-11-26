@@ -23,6 +23,7 @@
 		54E2B00C1E563A4922FE0FCE /* NotchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DF8AB0AC10581DC5D617E5C /* NotchBridge.swift */; };
 		5C6E2014D2EE92D44575AA55 /* SignalHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A82CF44B381502C961FCE1 /* SignalHub.swift */; };
 		5F4CA75CE96537F477808424 /* NotchPeekView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35FFFA469ED667D5EBC389B /* NotchPeekView.swift */; };
+		6167B70F3A763044B0C7E932 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE80FC25F3E2C66E26EC1D8 /* OnboardingView.swift */; };
 		64B41A88679E38675A322605 /* NotchContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549B9761D5E0153204342BE8 /* NotchContainerView.swift */; };
 		66DF7BB162833938A8B03784 /* MenuBarEventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */; };
 		9054E703F77FF4F1D565C2C1 /* SecondRowBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0286D2F0068C12FE60C8F280 /* SecondRowBarView.swift */; };
@@ -63,6 +64,7 @@
 		3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondRowBarController.swift; sourceTree = "<group>"; };
 		3EBDA3A35D04D8F9A2D47592 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockBadgeMonitor.swift; sourceTree = "<group>"; };
+		4FE80FC25F3E2C66E26EC1D8 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		549B9761D5E0153204342BE8 /* NotchContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchContainerView.swift; sourceTree = "<group>"; };
 		5CE22ECF8585B626AFBF61B6 /* MenuBarSearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarSearchPanel.swift; sourceTree = "<group>"; };
 		5D533DE34AFEBEE102F24992 /* NotchStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchStateMachine.swift; sourceTree = "<group>"; };
@@ -190,6 +192,14 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		6FD22C0C9D6119E9D7B9C350 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				4FE80FC25F3E2C66E26EC1D8 /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
 		84FA59B0E6444F2F743B2F32 = {
 			isa = PBXGroup;
 			children = (
@@ -214,6 +224,7 @@
 			children = (
 				C74E22D0A2EA45F4CA9A2919 /* MenuBar */,
 				FBA689782C05310327468AC8 /* Notch */,
+				6FD22C0C9D6119E9D7B9C350 /* Onboarding */,
 				561B2CED571AAC2EB5B72083 /* Search */,
 				0FB9E1CDC44822559994EF39 /* Settings */,
 				6E2CD31744473873BC6B5CCE /* Shared */,
@@ -406,6 +417,7 @@
 				5F4CA75CE96537F477808424 /* NotchPeekView.swift in Sources */,
 				2EC623C7DE1E00E4BCF35510 /* NotchShape.swift in Sources */,
 				27BF876F17C667614B29B70B /* NotchStateMachine.swift in Sources */,
+				6167B70F3A763044B0C7E932 /* OnboardingView.swift in Sources */,
 				26F3D5A23A588EA57A189ACE /* PermissionsManager.swift in Sources */,
 				F3774B436A2098EC11F0D528 /* SecondRowBarController.swift in Sources */,
 				9054E703F77FF4F1D565C2C1 /* SecondRowBarView.swift in Sources */,

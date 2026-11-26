@@ -35,10 +35,56 @@ final class AppIconService {
         return (nil, "app.fill")
     }
 
-    /// Pre-warms cached rasterized icons after a background scan so hover/open pays zero rasterization cost.
+    /// Pre-warms cached rasterized icons off the main thread so startup and hover never pay
+    /// synchronous 1024px `.icns` rasterization costs on `@MainActor`.
     func prewarm(items: [MenuBarItemInfo]) {
+        prewarmAsync(items: items)
+    }
+
+    func prewarmAsync(items: [MenuBarItemInfo]) {
+        var targets: [(cacheKey: String, filePath: String)] = []
+        var seen = Set<String>()
+
         for item in items {
-            _ = resolveIconOnly(for: item)
+            let key = item.bundleIdentifier ?? "pid.\(item.pid).\(item.appName)"
+            guard iconCache[key] == nil, seen.insert(key).inserted else { continue }
+            guard Self.systemExtraSymbol(for: item) == nil else { continue }
+
+            let path: String?
+            if let bid = item.bundleIdentifier,
+               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) {
+                path = url.path
+            } else if let app = NSRunningApplication(processIdentifier: item.pid),
+                      let bundleURL = app.bundleURL {
+                path = bundleURL.path
+            } else {
+                path = nil
+            }
+
+            if let path {
+                targets.append((key, path))
+            }
+        }
+
+        guard !targets.isEmpty else { return }
+        let batch = targets
+        Task.detached(priority: .utility) {
+            var rendered: [(String, CGImage)] = []
+            rendered.reserveCapacity(batch.count)
+            for target in batch {
+                let raw = NSWorkspace.shared.icon(forFile: target.filePath)
+                if let cg = Self.rasterizeToCGImage(raw, pointSize: 36, scale: 2) {
+                    rendered.append((target.cacheKey, cg))
+                }
+            }
+            let completed = rendered
+            await MainActor.run {
+                let service = AppIconService.shared
+                let size = NSSize(width: 36, height: 36)
+                for (key, cg) in completed where service.iconCache[key] == nil {
+                    service.iconCache[key] = NSImage(cgImage: cg, size: size)
+                }
+            }
         }
     }
 
@@ -181,7 +227,7 @@ final class AppIconService {
         return rasterized
     }
 
-    private static func rasterize(_ image: NSImage, pointSize: CGFloat, scale: CGFloat) -> NSImage {
+    private nonisolated static func rasterizeToCGImage(_ image: NSImage, pointSize: CGFloat, scale: CGFloat) -> CGImage? {
         let px = Int(pointSize * scale)
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -195,7 +241,7 @@ final class AppIconService {
             bytesPerRow: 0,
             bitsPerPixel: 0
         ) else {
-            return image
+            return nil
         }
         rep.size = NSSize(width: pointSize, height: pointSize)
 
@@ -211,10 +257,14 @@ final class AppIconService {
             )
         }
         NSGraphicsContext.restoreGraphicsState()
+        return rep.cgImage
+    }
 
-        let out = NSImage(size: NSSize(width: pointSize, height: pointSize))
-        out.addRepresentation(rep)
-        return out
+    private static func rasterize(_ image: NSImage, pointSize: CGFloat, scale: CGFloat) -> NSImage {
+        guard let cg = rasterizeToCGImage(image, pointSize: pointSize, scale: scale) else {
+            return image
+        }
+        return NSImage(cgImage: cg, size: NSSize(width: pointSize, height: pointSize))
     }
 
     // MARK: - Fast Dominant Color Extraction

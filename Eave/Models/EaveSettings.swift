@@ -17,6 +17,7 @@ final class EaveSettings {
 
     private enum Key {
         static let appearanceMode = "eave.appearanceMode"
+        static let hasCompletedOnboarding = "eave.hasCompletedOnboarding"
         static let rehideAutomatically = "eave.rehideAutomatically"
         static let expandOnEaveHover = "eave.expandOnEaveHover"
         static let hoverDelaySeconds = "eave.hoverDelaySeconds"
@@ -37,6 +38,10 @@ final class EaveSettings {
 
     var appearanceMode: AppAppearanceMode {
         didSet { defaults.set(appearanceMode.rawValue, forKey: Key.appearanceMode) }
+    }
+
+    var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
 
     /// Unified auto-rehide preference: automatically collapses expanded items after inactivity or app switch.
@@ -109,6 +114,7 @@ final class EaveSettings {
             self.appearanceMode = .system
         }
 
+        self.hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
         self.rehideAutomatically = defaults.object(forKey: Key.rehideAutomatically) as? Bool ?? true
         self.expandOnEaveHover = defaults.object(forKey: Key.expandOnEaveHover) as? Bool ?? true
         self.hoverDelaySeconds = defaults.object(forKey: Key.hoverDelaySeconds) as? Double ?? 0.20

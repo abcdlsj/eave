@@ -280,10 +280,58 @@ final class EaveCoreTests: XCTestCase {
     func testControlCenterExclusionFilter() {
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.controlcenter", ownerName: "Control Center"))
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: nil, ownerName: "Control Center"))
+        XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: nil, ownerName: "控制中心"))
+        XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: nil, ownerName: "コントロールセンター"))
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.systemuiserver", ownerName: "SystemUIServer"))
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.TextInputUI.xpc.CursorUIViewService", ownerName: "CursorUIViewService"))
         XCTAssertFalse(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.tencent.xinWeChat", ownerName: "WeChat"))
         XCTAssertFalse(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "io.tailscale.ipn.macsys", ownerName: "Tailscale"))
+    }
+
+    func testLocalizedControlCenterNeverLeaksAndResolvesNumericPIDProxy() {
+        let apps: [MenuBarItemScanner.RunningAppSnapshot] = [
+            .init(pid: 101, bundleIdentifier: "com.tencent.xinWeChat", appName: "WeChat"),
+            .init(pid: 79794, bundleIdentifier: "com.abcdlsj.warren", appName: "Warren", isAccessory: true)
+        ]
+
+        // Localized Chinese Control Center ("控制中心") + unknown localized owner matched by controlCenterPIDs.
+        let windows: [MenuBarItemScanner.RawStatusWindow] = [
+            .init(windowID: 1, pid: 763, ownerName: "控制中心", windowName: "eave.control.hidden", bounds: CGRect(x: -3862, y: 0, width: 5004, height: 33), isOnScreen: false),
+            .init(windowID: 2, pid: 763, ownerName: "控制中心", windowName: "com.tencent.xinWeChat", bounds: CGRect(x: -3950, y: 0, width: 26, height: 33), isOnScreen: false),
+            // Proxy window carrying numeric PID instead of bundle ID (observed on macOS 26 Tahoe).
+            .init(windowID: 3, pid: 763, ownerName: "控制中心", windowName: "79794", bounds: CGRect(x: -3910, y: 0, width: 22, height: 33), isOnScreen: false),
+            // Unnamed / Item-0 / Clock / BentoBox system windows must NEVER leak as "Control Center" / "控制中心".
+            .init(windowID: 4, pid: 763, ownerName: "控制中心", windowName: "Item-0", bounds: CGRect(x: -4000, y: 0, width: 24, height: 33), isOnScreen: false),
+            .init(windowID: 5, pid: 763, ownerName: "控制中心", windowName: "Clock", bounds: CGRect(x: 1386, y: 0, width: 128, height: 33), isOnScreen: true),
+            .init(windowID: 6, pid: 763, ownerName: "LocalizedUnknownCC", windowName: "", bounds: CGRect(x: 1356, y: 0, width: 30, height: 33), isOnScreen: true)
+        ]
+
+        let parsed = MenuBarItemScanner.parseStatusWindows(
+            windows,
+            runningApps: apps,
+            menuBarHeight: 33,
+            hiddenSeparatorX: 1142,
+            excludingWindowIDs: [],
+            ownPID: 999,
+            ownBundleID: "com.abcdlsj.eave",
+            controlCenterPIDs: [763],
+            excludedSystemPIDs: [763]
+        )
+
+        XCTAssertEqual(parsed.count, 2)
+        XCTAssertFalse(parsed.contains { $0.appName.contains("Control") || $0.appName.contains("控制中心") || $0.appName == "LocalizedUnknownCC" })
+        let byBundle = Dictionary(uniqueKeysWithValues: parsed.compactMap { item in
+            item.bundleIdentifier.map { ($0, item) }
+        })
+        XCTAssertEqual(byBundle["com.tencent.xinWeChat"]?.section, .hidden)
+        XCTAssertEqual(byBundle["com.abcdlsj.warren"]?.section, .hidden)
+
+        // Toggle frame extraction also works with localized Control Center owner name.
+        let toggleWindows: [MenuBarItemScanner.RawStatusWindow] = [
+            .init(windowID: 10, pid: 763, ownerName: "控制中心", windowName: "eave.control.toggle", bounds: CGRect(x: 1330, y: 0, width: 26, height: 33), isOnScreen: true)
+        ]
+        let toggleFrames = MenuBarManager.toggleFramesFromWindows(toggleWindows, primaryScreenHeight: 982, ownBundleID: "com.abcdlsj.eave")
+        XCTAssertEqual(toggleFrames.count, 1)
     }
 
     func testMultiDisplayToggleFramesConversionAndProjection() {
@@ -414,6 +462,7 @@ final class EaveCoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let s1 = EaveSettings(defaults: defaults)
+        XCTAssertFalse(s1.hasCompletedOnboarding)
         XCTAssertTrue(s1.rehideAutomatically)
         XCTAssertTrue(s1.expandOnEaveHover)
         XCTAssertEqual(s1.hoverDisplayMode, .inline)
@@ -423,6 +472,7 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertTrue(s1.enableNotchPeek)
         XCTAssertEqual(s1.peekDurationSeconds, 4.5)
 
+        s1.hasCompletedOnboarding = true
         s1.rehideAutomatically = false
         s1.expandOnEaveHover = false
         s1.hoverDelaySeconds = 0.35
@@ -436,6 +486,7 @@ final class EaveCoreTests: XCTestCase {
         s1.addWatchedBundleID("  com.example.two  ")
 
         let s2 = EaveSettings(defaults: defaults)
+        XCTAssertTrue(s2.hasCompletedOnboarding)
         XCTAssertFalse(s2.rehideAutomatically)
         XCTAssertFalse(s2.expandOnEaveHover)
         XCTAssertEqual(s2.hoverDelaySeconds, 0.35, accuracy: 0.001)

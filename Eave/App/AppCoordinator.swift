@@ -25,7 +25,15 @@ final class AppCoordinator {
 
     private var notchPanelController: NotchPanelController?
     private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
+    private var onboardingWindowDelegate: OnboardingWindowDelegate?
     private var hiddenSyncTimer: Timer?
+    private var inFlightScanTask: Task<[MenuBarItemInfo], Never>?
+    private var startupFollowUpTask: Task<Void, Never>?
+    private var coldSweepTask: Task<Void, Never>?
+    private var workspaceRefreshDebounceTask: Task<Void, Never>?
+    private var workspaceLaunchObserver: Any?
+    private var workspaceTerminateObserver: Any?
 
     private(set) var discoveredItems: [MenuBarItemInfo] = []
     private(set) var isScanningBarItems: Bool = false
@@ -67,6 +75,12 @@ final class AppCoordinator {
         eventMonitor.start()
         signalHub.start()
         startHiddenDiscoverySync()
+
+        if !settings.hasCompletedOnboarding {
+            DispatchQueue.main.async { [weak self] in
+                self?.openOnboardingWindow()
+            }
+        }
     }
 
     func applyAppearance() {
@@ -74,6 +88,7 @@ final class AppCoordinator {
         let appearance = mode.nsAppearance
         NSApp.appearance = appearance
         settingsWindow?.appearance = appearance
+        onboardingWindow?.appearance = appearance
         secondRowBarController.applyAppearance(mode)
         searchController.applyAppearance(mode)
     }
@@ -81,6 +96,22 @@ final class AppCoordinator {
     func stop() {
         hiddenSyncTimer?.invalidate()
         hiddenSyncTimer = nil
+        inFlightScanTask?.cancel()
+        inFlightScanTask = nil
+        startupFollowUpTask?.cancel()
+        startupFollowUpTask = nil
+        coldSweepTask?.cancel()
+        coldSweepTask = nil
+        workspaceRefreshDebounceTask?.cancel()
+        workspaceRefreshDebounceTask = nil
+        if let observer = workspaceLaunchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceLaunchObserver = nil
+        }
+        if let observer = workspaceTerminateObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceTerminateObserver = nil
+        }
         permissions.stopPolling()
         eventMonitor.stop()
         signalHub.stop()
@@ -105,7 +136,7 @@ final class AppCoordinator {
             needsAccessibilityPermission: !permissions.hasAccessibility,
             pinnedForPreview: pinnedForPreview
         )
-        if !hasFreshCache && !isScanningBarItems {
+        if !hasFreshCache {
             Task {
                 await refreshMenuBarItems()
             }
@@ -137,7 +168,59 @@ final class AppCoordinator {
 
     func openSearch() {
         secondRowBarController.hide()
-        searchController.open()
+        searchController.open(initialItems: discoveredItems)
+    }
+
+    func openOnboardingWindow() {
+        if onboardingWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 580, height: 484),
+                styleMask: [.titled, .closable, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Welcome to Eave"
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
+            window.isReleasedWhenClosed = false
+            window.appearance = settings.appearanceMode.nsAppearance
+            window.center()
+
+            let delegate = OnboardingWindowDelegate { [weak self] in
+                self?.handleOnboardingClosed()
+            }
+            window.delegate = delegate
+            onboardingWindowDelegate = delegate
+            onboardingWindow = window
+        }
+
+        if let window = onboardingWindow {
+            window.appearance = settings.appearanceMode.nsAppearance
+            window.contentView = NSHostingView(
+                rootView: OnboardingView(coordinator: self) { [weak self] in
+                    self?.completeOnboardingAndClose()
+                }
+            )
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    func completeOnboardingAndClose() {
+        settings.hasCompletedOnboarding = true
+        if menuBarManager.isHiddenExpanded {
+            menuBarManager.collapseAll()
+        }
+        onboardingWindow?.close()
+    }
+
+    private func handleOnboardingClosed() {
+        settings.hasCompletedOnboarding = true
+        permissions.startPolling(interval: 8.0)
+        Task {
+            await refreshMenuBarItems()
+        }
     }
 
     func openSettingsWindow() {
@@ -172,6 +255,9 @@ final class AppCoordinator {
             case "settings":
                 openSettingsWindow()
                 return true
+            case "onboarding":
+                openOnboardingWindow()
+                return true
             case "search":
                 openSearch()
                 return true
@@ -184,37 +270,51 @@ final class AppCoordinator {
 
     @discardableResult
     func refreshMenuBarItems() async -> [MenuBarItemInfo] {
-        isScanningBarItems = true
-        defer { isScanningBarItems = false }
-
-        let scanned = await itemScanner.scanAsync(
-            hiddenSeparatorX: menuBarManager.hiddenSeparatorX,
-            excludingWindowIDs: menuBarManager.ownedWindowIDs
-        )
-        lastMenuBarScanTime = CFAbsoluteTimeGetCurrent()
-        syncHiddenBundleIDs(from: scanned)
-
-        let signature = scanned.map { "\($0.id)|\($0.section.rawValue)|\($0.title)" }
-        let changed = signature != lastScannedSignature || discoveredItems.isEmpty
-        lastScannedSignature = signature
-
-        if changed {
-            AppIconService.shared.prewarm(items: scanned)
-            discoveredItems = scanned
+        // Coalesce concurrent scan requests so startup, hover, and Search never compete for AX/CGWindowList IPC.
+        if let existing = inFlightScanTask {
+            return await existing.value
         }
 
-        if secondRowBarController.isVisible && (changed || secondRowBarController.isScanning) {
-            secondRowBarController.updateContent(
-                items: secondRowHiddenItems,
-                activeBadges: signalHub.activeBadgesByBundleID,
-                itemsPerRow: settings.secondRowItemsPerRow,
-                layoutMode: settings.secondRowLayoutMode,
-                isScanning: false,
-                needsAccessibilityPermission: !permissions.hasAccessibility,
-                anchorFrame: nil
+        let task = Task { @MainActor [weak self] () -> [MenuBarItemInfo] in
+            guard let self else { return [] }
+            self.isScanningBarItems = true
+            defer {
+                self.isScanningBarItems = false
+                self.inFlightScanTask = nil
+            }
+
+            let scanned = await self.itemScanner.scanAsync(
+                hiddenSeparatorX: self.menuBarManager.hiddenSeparatorX,
+                excludingWindowIDs: self.menuBarManager.ownedWindowIDs
             )
+            self.lastMenuBarScanTime = CFAbsoluteTimeGetCurrent()
+            self.syncHiddenBundleIDs(from: scanned)
+
+            let signature = scanned.map { "\($0.id)|\($0.section.rawValue)|\($0.title)" }
+            let changed = signature != self.lastScannedSignature || self.discoveredItems.isEmpty
+            self.lastScannedSignature = signature
+
+            if changed {
+                AppIconService.shared.prewarmAsync(items: scanned)
+                self.discoveredItems = scanned
+            }
+
+            if self.secondRowBarController.isVisible && (changed || self.secondRowBarController.isScanning) {
+                self.secondRowBarController.updateContent(
+                    items: self.secondRowHiddenItems,
+                    activeBadges: self.signalHub.activeBadgesByBundleID,
+                    itemsPerRow: self.settings.secondRowItemsPerRow,
+                    layoutMode: self.settings.secondRowLayoutMode,
+                    isScanning: false,
+                    needsAccessibilityPermission: !self.permissions.hasAccessibility,
+                    anchorFrame: nil
+                )
+            }
+            return self.discoveredItems
         }
-        return discoveredItems
+
+        inFlightScanTask = task
+        return await task.value
     }
 
     private var secondRowHiddenItems: [MenuBarItemInfo] {
@@ -246,6 +346,9 @@ final class AppCoordinator {
         }
         menuBarManager.onRequestOpenSettings = { [weak self] in
             self?.openSettingsWindow()
+        }
+        menuBarManager.onRequestOpenOnboarding = { [weak self] in
+            self?.openOnboardingWindow()
         }
         menuBarManager.onRequestTestPeek = { [weak self] in
             self?.signalHub.sendTestPeek()
@@ -369,34 +472,71 @@ final class AppCoordinator {
     }
 
     private func startHiddenDiscoverySync() {
-        performLightweightHiddenScan()
+        // Phase 1: Immediate fast scan (<60ms) using WindowServer layer-25 proxies + known/accessory AX apps.
+        Task { [weak self] in
+            await self?.refreshMenuBarItems()
+        }
+
+        // Follow-up once WindowServer finishes placing Eave's freshly created hidden separator on launch.
+        startupFollowUpTask?.cancel()
+        startupFollowUpTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.menuBarManager.refreshToggleFramesCache()
+            if !self.itemScanner.lastScanLocatedSeparatorBand || self.discoveredItems.isEmpty {
+                await self.refreshMenuBarItems()
+            }
+        }
+
+        // Phase 2: Quiet low-priority background sweep over remaining regular apps so newly installed
+        // regular apps with status items are discovered without ever slowing down cold launch.
+        coldSweepTask?.cancel()
+        coldSweepTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard let self, !Task.isCancelled else { return }
+            let foundNew = await self.itemScanner.sweepUnscannedRegularAppsAsync()
+            if foundNew && !Task.isCancelled {
+                await self.refreshMenuBarItems()
+            }
+        }
+
+        observeWorkspaceAppChanges()
+
         hiddenSyncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.performLightweightHiddenScan()
+                await self?.refreshMenuBarItems()
             }
         }
     }
 
-    private func performLightweightHiddenScan() {
-        let hiddenX = menuBarManager.hiddenSeparatorX
-        let owned = menuBarManager.ownedWindowIDs
-        Task { [weak self] in
-            guard let self else { return }
-            let scanned = await self.itemScanner.scanAsync(
-                hiddenSeparatorX: hiddenX,
-                excludingWindowIDs: owned
-            )
-            self.lastMenuBarScanTime = CFAbsoluteTimeGetCurrent()
-            self.syncHiddenBundleIDs(from: scanned)
-
-            let signature = scanned.map { "\($0.id)|\($0.section.rawValue)|\($0.title)" }
-            guard signature != self.lastScannedSignature else { return }
-            self.lastScannedSignature = signature
-
-            if !self.isScanningBarItems {
-                AppIconService.shared.prewarm(items: scanned)
-                self.discoveredItems = scanned
+    private func observeWorkspaceAppChanges() {
+        let nc = NSWorkspace.shared.notificationCenter
+        workspaceLaunchObserver = nc.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleWorkspaceMenuBarRefresh()
             }
+        }
+        workspaceTerminateObserver = nc.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleWorkspaceMenuBarRefresh()
+            }
+        }
+    }
+
+    private func scheduleWorkspaceMenuBarRefresh() {
+        workspaceRefreshDebounceTask?.cancel()
+        workspaceRefreshDebounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard let self, !Task.isCancelled else { return }
+            await self.refreshMenuBarItems()
         }
     }
 
@@ -407,5 +547,18 @@ final class AppCoordinator {
                 .compactMap(\.bundleIdentifier)
         )
         signalHub.updateDiscoveredHiddenBundleIDs(hiddenIDs)
+    }
+}
+
+@MainActor
+private final class OnboardingWindowDelegate: NSObject, NSWindowDelegate {
+    private let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
     }
 }

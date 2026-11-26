@@ -95,10 +95,13 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         }
     }
 
-    func open() {
+    func open(initialItems: [MenuBarItemInfo] = []) {
         closeTask?.cancel()
         closeTask = nil
 
+        if !initialItems.isEmpty {
+            allItems = initialItems
+        }
         query = ""
         sectionFilter = .all
         selectedIndex = 0

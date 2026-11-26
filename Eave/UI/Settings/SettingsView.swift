@@ -284,6 +284,30 @@ private struct GeneralSettingsTab: View {
                 subtitle: "Collapses automatically after 8s of inactivity or when switching apps.",
                 isOn: $settings.rehideAutomatically
             )
+
+            EaveCardDivider()
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Quick Start Guide")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                    Text("Revisit the interactive walkthrough for hiding icons, hover reveal, and Notch signals.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button("Open Guide") {
+                    EaveHaptics.tick()
+                    coordinator.openOnboardingWindow()
+                }
+                .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
         }
     }
 

@@ -36,6 +36,7 @@ final class MenuBarManager: NSObject {
     /// Callbacks wired by AppCoordinator for cross-module orchestration.
     var onRequestOpenSearch: (() -> Void)?
     var onRequestOpenSettings: (() -> Void)?
+    var onRequestOpenOnboarding: (() -> Void)?
     var onRequestTestPeek: (() -> Void)?
     var onExpansionChanged: ((Bool) -> Void)?
     var onToggleHoverChanged: ((Bool) -> Void)?
@@ -205,9 +206,9 @@ final class MenuBarManager: NSObject {
                   win.bounds.height >= 16, win.bounds.height <= 64 else {
                 continue
             }
-            let lowerOwner = win.ownerName.lowercased()
+            let isControlCenter = MenuBarItemScanner.isControlCenterOwnerName(win.ownerName)
             let lowerName = win.windowName.lowercased()
-            let isToggle = (lowerOwner == "control center" && (lowerName == "eave.control.toggle" || lowerName == lowerOwn))
+            let isToggle = (isControlCenter && (lowerName == "eave.control.toggle" || lowerName == lowerOwn))
                 || lowerName == "eave.control.toggle"
             guard isToggle else { continue }
 
@@ -406,6 +407,7 @@ final class MenuBarManager: NSObject {
         menu.addItem(.separator())
 
         menu.addItem(makeItem(title: "Preview Notch Peek", symbol: "bell.badge", action: #selector(menuTestPeek)))
+        menu.addItem(makeItem(title: "Quick Start Guide...", symbol: "sparkles", action: #selector(menuOpenOnboarding)))
         menu.addItem(makeItem(title: "Settings...", symbol: "gearshape", action: #selector(menuOpenSettings), keyEquivalent: ","))
 
         menu.addItem(.separator())
@@ -423,6 +425,7 @@ final class MenuBarManager: NSObject {
     @objc private func menuToggleHidden() { toggleHidden() }
     @objc private func menuOpenSearch() { onRequestOpenSearch?() }
     @objc private func menuTestPeek() { onRequestTestPeek?() }
+    @objc private func menuOpenOnboarding() { onRequestOpenOnboarding?() }
     @objc private func menuOpenSettings() { onRequestOpenSettings?() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
