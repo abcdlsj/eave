@@ -22,6 +22,7 @@ final class AppCoordinator {
     let notchStateMachine: NotchStateMachine
     let signalHub: SignalHub
     let searchController: MenuBarSearchController
+    let secondRowBarController: SecondRowBarController
 
     private var notchPanelController: NotchPanelController?
     private var settingsWindow: NSWindow?
@@ -30,6 +31,7 @@ final class AppCoordinator {
     private(set) var capturedItems: [CapturedMenuBarItem] = []
     private(set) var isScanningBarItems: Bool = false
     private var lastScannedSignature: [String] = []
+    private var lastMenuBarScanTime: CFAbsoluteTime = 0
 
     init() {
         let settings = EaveSettings()
@@ -51,11 +53,13 @@ final class AppCoordinator {
         self.notchStateMachine = stateMachine
         self.signalHub = SignalHub(settings: settings, stateMachine: stateMachine)
         self.searchController = MenuBarSearchController()
+        self.secondRowBarController = SecondRowBarController()
     }
 
     func start() {
         setupNotchPanel()
         wireMenuBarCallbacks()
+        wireSecondRowBar()
         wireEventMonitor()
         wireHotKeys()
         wireSearch()
@@ -73,6 +77,7 @@ final class AppCoordinator {
         eventMonitor.stop()
         signalHub.stop()
         hotKeyManager.tearDown()
+        secondRowBarController.tearDown()
         notchPanelController?.tearDown()
         menuBarManager.tearDown()
     }
@@ -81,6 +86,7 @@ final class AppCoordinator {
 
     func toggleNotchBar() {
         EaveHaptics.tick()
+        secondRowBarController.hide()
         if notchStateMachine.isBarOpen {
             notchStateMachine.closeBar()
             notchPanelController?.updateMouseInteractivity()
@@ -93,7 +99,55 @@ final class AppCoordinator {
         }
     }
 
+    func showSecondRowBar(anchorFrame: CGRect? = nil, pinnedForPreview: Bool = false) {
+        if notchStateMachine.isBarOpen {
+            notchStateMachine.closeBar()
+            notchPanelController?.updateMouseInteractivity()
+        }
+        let resolvedAnchor = anchorFrame ?? menuBarManager.toggleItemFrame(near: NSEvent.mouseLocation)
+        let hasFreshCache = !capturedItems.isEmpty && (CFAbsoluteTimeGetCurrent() - lastMenuBarScanTime) < 6.0
+        secondRowBarController.show(
+            anchorFrame: resolvedAnchor,
+            items: secondRowHiddenItems,
+            activeBadges: signalHub.activeBadgesByBundleID,
+            itemsPerRow: settings.secondRowItemsPerRow,
+            layoutMode: settings.secondRowLayoutMode,
+            isScanning: !hasFreshCache && capturedItems.isEmpty,
+            needsAccessibilityPermission: !permissions.hasAccessibility,
+            pinnedForPreview: pinnedForPreview
+        )
+        if !hasFreshCache && !isScanningBarItems {
+            Task {
+                await refreshCapturedMenuBarItems()
+            }
+        }
+    }
+
+    func syncHoverSettings() {
+        if !settings.expandOnEaveHover {
+            eventMonitor.cancelPendingHover()
+            secondRowBarController.hide()
+            return
+        }
+        if settings.hoverDisplayMode != .secondRow {
+            secondRowBarController.hide()
+            return
+        }
+        if secondRowBarController.isVisible {
+            secondRowBarController.updateContent(
+                items: secondRowHiddenItems,
+                activeBadges: signalHub.activeBadgesByBundleID,
+                itemsPerRow: settings.secondRowItemsPerRow,
+                layoutMode: settings.secondRowLayoutMode,
+                isScanning: isScanningBarItems,
+                needsAccessibilityPermission: !permissions.hasAccessibility,
+                anchorFrame: nil
+            )
+        }
+    }
+
     func openSearch() {
+        secondRowBarController.hide()
         if notchStateMachine.isBarOpen {
             notchStateMachine.closeBar()
         }
@@ -152,14 +206,41 @@ final class AppCoordinator {
             alwaysHiddenSeparatorX: menuBarManager.alwaysHiddenSeparatorX,
             excludingWindowIDs: menuBarManager.ownedWindowIDs
         )
+        lastMenuBarScanTime = CFAbsoluteTimeGetCurrent()
         syncHiddenBundleIDs(from: scanned)
 
-        let captured = await imageCapturer.captureItems(
-            scanned,
-            allowLiveCapture: settings.enableLiveIconCapture
-        )
-        capturedItems = captured
-        return captured
+        let signature = scanned.map { "\($0.id)|\($0.section.rawValue)|\($0.title)" }
+        let changed = signature != lastScannedSignature || capturedItems.isEmpty
+        lastScannedSignature = signature
+
+        if changed || settings.enableLiveIconCapture {
+            let captured = await imageCapturer.captureItems(
+                scanned,
+                allowLiveCapture: settings.enableLiveIconCapture
+            )
+            AppIconService.shared.prewarm(items: scanned)
+            capturedItems = captured
+        }
+
+        if secondRowBarController.isVisible && (changed || secondRowBarController.isScanning) {
+            secondRowBarController.updateContent(
+                items: secondRowHiddenItems,
+                activeBadges: signalHub.activeBadgesByBundleID,
+                itemsPerRow: settings.secondRowItemsPerRow,
+                layoutMode: settings.secondRowLayoutMode,
+                isScanning: false,
+                needsAccessibilityPermission: !permissions.hasAccessibility,
+                anchorFrame: nil
+            )
+        }
+        return capturedItems
+    }
+
+    private var secondRowHiddenItems: [CapturedMenuBarItem] {
+        if settings.enableAlwaysHiddenSection {
+            return capturedItems.filter { $0.info.section == .hidden }
+        }
+        return capturedItems.filter { $0.info.section != .visible }
     }
 
     // MARK: - Private Wiring
@@ -218,15 +299,48 @@ final class AppCoordinator {
             self?.signalHub.sendTestPeek()
             self?.notchPanelController?.updateMouseInteractivity()
         }
+        menuBarManager.onToggleHoverChanged = { [weak self] isHovering in
+            self?.eventMonitor.handleEaveToggleHover(isHovering: isHovering)
+        }
+        menuBarManager.onWillHandleToggleInteraction = { [weak self] in
+            self?.eventMonitor.cancelPendingHover()
+            self?.secondRowBarController.hide()
+        }
         menuBarManager.isPointerProtectedFromRehide = { [weak self] in
             guard let self else { return false }
             let loc = NSEvent.mouseLocation
             return self.notchStateMachine.isBarOpen
+                || self.secondRowBarController.isVisible
                 || (self.notchPanelController?.isPointInsideActiveSurface(loc) ?? false)
         }
     }
 
+    private func wireSecondRowBar() {
+        secondRowBarController.onSelectItem = { [weak self] item in
+            guard let self else { return }
+            Task {
+                await self.clickForwarder.trigger(item)
+            }
+        }
+        secondRowBarController.onRequestPermissions = { [weak self] in
+            self?.permissions.requestAccessibilityPrompt()
+            self?.permissions.openAccessibilitySettings()
+        }
+        secondRowBarController.shouldDismissOnAppSwitch = { [weak self] in
+            self?.settings.rehideOnAppSwitch ?? true
+        }
+    }
+
     private func wireEventMonitor() {
+        eventMonitor.toggleItemFramesProvider = { [weak self] in
+            self?.menuBarManager.allToggleItemFrames ?? []
+        }
+        eventMonitor.isHoverSuppressed = { [weak self] in
+            guard let self else { return true }
+            return self.menuBarManager.isContextMenuOpen
+                || self.notchStateMachine.isBarOpen
+                || self.searchController.isVisible
+        }
         eventMonitor.onScrollExpand = { [weak self] in
             guard let self else { return }
             if self.settings.useNotchBarOnToggle {
@@ -238,19 +352,32 @@ final class AppCoordinator {
         eventMonitor.onScrollCollapse = { [weak self] in
             guard let self else { return }
             let loc = NSEvent.mouseLocation
-            // Do not hijack horizontal/vertical scrolling while the user is scrolling inside Notch Bar.
+            // Do not hijack horizontal/vertical scrolling while the user is scrolling inside Notch Bar or Second Row.
             if self.notchStateMachine.isBarOpen,
                self.notchPanelController?.isPointInsideActiveSurface(loc) == true {
+                return
+            }
+            if self.secondRowBarController.isVisible,
+               self.secondRowBarController.isPointInsideCard(loc) {
                 return
             }
             if self.notchStateMachine.isBarOpen {
                 self.notchStateMachine.closeBar()
             }
+            self.secondRowBarController.hide()
             self.menuBarManager.collapseAll()
         }
-        eventMonitor.onHoverExpand = { [weak self] in
-            guard let self, !self.menuBarManager.isHiddenExpanded else { return }
-            self.menuBarManager.expandHidden()
+        eventMonitor.onHoverExpand = { [weak self] anchorFrame in
+            guard let self else { return }
+            switch self.settings.hoverDisplayMode {
+            case .inline:
+                guard !self.menuBarManager.isHiddenExpanded else { return }
+                self.menuBarManager.expandHidden()
+            case .secondRow:
+                guard !self.menuBarManager.isHiddenExpanded else { return }
+                guard !self.secondRowBarController.isVisible else { return }
+                self.showSecondRowBar(anchorFrame: anchorFrame, pinnedForPreview: false)
+            }
         }
         eventMonitor.onOutsideClick = { [weak self] in
             guard let self else { return }
@@ -259,6 +386,10 @@ final class AppCoordinator {
                self.notchPanelController?.isPointInsideActiveSurface(loc) == false {
                 self.notchStateMachine.closeBar()
                 self.notchPanelController?.updateMouseInteractivity()
+            }
+            if self.secondRowBarController.isVisible,
+               !self.secondRowBarController.isPointInsideCard(loc) {
+                self.secondRowBarController.hide()
             }
             if self.menuBarManager.isHiddenExpanded,
                self.notchPanelController?.isPointInsideActiveSurface(loc) == false {
@@ -269,10 +400,16 @@ final class AppCoordinator {
             }
         }
         eventMonitor.onMouseMoved = { [weak self] point in
-            self?.notchPanelController?.handleGlobalPointerMove(to: point)
+            guard let self else { return }
+            self.notchPanelController?.handleGlobalPointerMove(to: point)
+            self.secondRowBarController.handleGlobalPointerMove(
+                to: point,
+                anchorFrame: self.menuBarManager.toggleItemFrame(near: point)
+            )
         }
         eventMonitor.needsPointerTracking = { [weak self] in
-            self?.notchStateMachine.isInteractiveState ?? false
+            guard let self else { return false }
+            return self.notchStateMachine.isInteractiveState || self.secondRowBarController.isVisible
         }
     }
 
@@ -326,6 +463,7 @@ final class AppCoordinator {
                 alwaysHiddenSeparatorX: alwaysX,
                 excludingWindowIDs: owned
             )
+            self.lastMenuBarScanTime = CFAbsoluteTimeGetCurrent()
             self.syncHiddenBundleIDs(from: scanned)
 
             let signature = scanned.map { "\($0.id)|\($0.section.rawValue)|\($0.title)" }
@@ -333,6 +471,7 @@ final class AppCoordinator {
             self.lastScannedSignature = signature
 
             if !self.isScanningBarItems && !self.notchStateMachine.isBarOpen {
+                AppIconService.shared.prewarm(items: scanned)
                 self.capturedItems = await self.imageCapturer.captureItems(
                     scanned,
                     allowLiveCapture: self.settings.enableLiveIconCapture

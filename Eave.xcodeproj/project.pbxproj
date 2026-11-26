@@ -25,6 +25,7 @@
 		64B41A88679E38675A322605 /* NotchContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549B9761D5E0153204342BE8 /* NotchContainerView.swift */; };
 		66DF7BB162833938A8B03784 /* MenuBarEventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */; };
 		686F5EFC36DB1D35358AE749 /* MenuBarImageCapturer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3687B5BF8D5564CAFE0C693B /* MenuBarImageCapturer.swift */; };
+		9054E703F77FF4F1D565C2C1 /* SecondRowBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0286D2F0068C12FE60C8F280 /* SecondRowBarView.swift */; };
 		92A5A91616C1A1784F2B7B39 /* NotchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE533D6DEB6C9E120B0F643E /* NotchModels.swift */; };
 		9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */; };
 		9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65C078762E103E936EA304CE /* EaveApp.swift */; };
@@ -38,6 +39,7 @@
 		CD57C810A917465183E4F3C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C554A4BC82A054F7C34D43F7 /* Assets.xcassets */; };
 		D095C2B451D2A55D8CB9D078 /* MenuBarModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A798A5F6CCAB8AA615D646CF /* MenuBarModels.swift */; };
 		F0AFC1D6DF21832C54A61F02 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BFF31D6ECADB9071B56A235 /* MenuBarManager.swift */; };
+		F3774B436A2098EC11F0D528 /* SecondRowBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */; };
 		F78E61EBF22C5941A3A4F39C /* HotKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C82268E7E9A27FB9248A6E /* HotKeyManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -53,12 +55,14 @@
 
 /* Begin PBXFileReference section */
 		0073A05462A6CB164AC768F5 /* Eave.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Eave.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0286D2F0068C12FE60C8F280 /* SecondRowBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondRowBarView.swift; sourceTree = "<group>"; };
 		125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarEventMonitor.swift; sourceTree = "<group>"; };
 		1589FF8D385A8011AB08A5FA /* EaveCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EaveCoreTests.swift; sourceTree = "<group>"; };
 		197B80E0F48811FECFDC63E1 /* MenuBarItemScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarItemScanner.swift; sourceTree = "<group>"; };
 		2B1F1D2A14C1838E3C770F5B /* PermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsManager.swift; sourceTree = "<group>"; };
 		2ECDDB5F653B029856620C67 /* NotchGeometryResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchGeometryResolver.swift; sourceTree = "<group>"; };
 		3687B5BF8D5564CAFE0C693B /* MenuBarImageCapturer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarImageCapturer.swift; sourceTree = "<group>"; };
+		3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondRowBarController.swift; sourceTree = "<group>"; };
 		3EBDA3A35D04D8F9A2D47592 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockBadgeMonitor.swift; sourceTree = "<group>"; };
 		52535BBF6DEA02E91B600F80 /* NotchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchBarView.swift; sourceTree = "<group>"; };
@@ -203,12 +207,22 @@
 		C01036F34CE57E5B8A4F31FC /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				C74E22D0A2EA45F4CA9A2919 /* MenuBar */,
 				FBA689782C05310327468AC8 /* Notch */,
 				561B2CED571AAC2EB5B72083 /* Search */,
 				0FB9E1CDC44822559994EF39 /* Settings */,
 				6E2CD31744473873BC6B5CCE /* Shared */,
 			);
 			path = UI;
+			sourceTree = "<group>";
+		};
+		C74E22D0A2EA45F4CA9A2919 /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */,
+				0286D2F0068C12FE60C8F280 /* SecondRowBarView.swift */,
+			);
+			path = MenuBar;
 			sourceTree = "<group>";
 		};
 		CA119142FD06BFAF21361C94 /* Products */ = {
@@ -389,6 +403,8 @@
 				2EC623C7DE1E00E4BCF35510 /* NotchShape.swift in Sources */,
 				27BF876F17C667614B29B70B /* NotchStateMachine.swift in Sources */,
 				26F3D5A23A588EA57A189ACE /* PermissionsManager.swift in Sources */,
+				F3774B436A2098EC11F0D528 /* SecondRowBarController.swift in Sources */,
+				9054E703F77FF4F1D565C2C1 /* SecondRowBarView.swift in Sources */,
 				22A64680ED51B7BDE59DBBFC /* SettingsView.swift in Sources */,
 				5C6E2014D2EE92D44575AA55 /* SignalHub.swift in Sources */,
 			);

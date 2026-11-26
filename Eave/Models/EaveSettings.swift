@@ -7,14 +7,24 @@ import Observation
 final class EaveSettings {
     private let defaults: UserDefaults
 
+    nonisolated static let secondRowItemsPerRowRange: ClosedRange<Int> = 3...16
+    nonisolated static let defaultSecondRowItemsPerRow: Int = 8
+
+    nonisolated static func clampedItemsPerRow(_ value: Int) -> Int {
+        min(max(value, secondRowItemsPerRowRange.lowerBound), secondRowItemsPerRowRange.upperBound)
+    }
+
     private enum Key {
         static let enableAlwaysHiddenSection = "eave.enableAlwaysHiddenSection"
         static let rehideAutomatically = "eave.rehideAutomatically"
         static let rehideDelaySeconds = "eave.rehideDelaySeconds"
         static let rehideOnAppSwitch = "eave.rehideOnAppSwitch"
         static let expandOnMenuBarScroll = "eave.expandOnMenuBarScroll"
-        static let expandOnMenuBarHover = "eave.expandOnMenuBarHover"
+        static let expandOnEaveHover = "eave.expandOnEaveHover"
         static let hoverDelaySeconds = "eave.hoverDelaySeconds"
+        static let hoverDisplayMode = "eave.hoverDisplayMode"
+        static let secondRowLayoutMode = "eave.secondRowLayoutMode"
+        static let secondRowItemsPerRow = "eave.secondRowItemsPerRow"
         static let useNotchBarOnToggle = "eave.useNotchBarOnToggle"
 
         static let enableNotchPeek = "eave.enableNotchPeek"
@@ -51,12 +61,31 @@ final class EaveSettings {
         didSet { defaults.set(expandOnMenuBarScroll, forKey: Key.expandOnMenuBarScroll) }
     }
 
-    var expandOnMenuBarHover: Bool {
-        didSet { defaults.set(expandOnMenuBarHover, forKey: Key.expandOnMenuBarHover) }
+    var expandOnEaveHover: Bool {
+        didSet { defaults.set(expandOnEaveHover, forKey: Key.expandOnEaveHover) }
     }
 
     var hoverDelaySeconds: Double {
         didSet { defaults.set(hoverDelaySeconds, forKey: Key.hoverDelaySeconds) }
+    }
+
+    var hoverDisplayMode: HoverDisplayMode {
+        didSet { defaults.set(hoverDisplayMode.rawValue, forKey: Key.hoverDisplayMode) }
+    }
+
+    var secondRowLayoutMode: SecondRowLayoutMode {
+        didSet { defaults.set(secondRowLayoutMode.rawValue, forKey: Key.secondRowLayoutMode) }
+    }
+
+    var secondRowItemsPerRow: Int {
+        didSet {
+            let clamped = Self.clampedItemsPerRow(secondRowItemsPerRow)
+            if secondRowItemsPerRow != clamped {
+                secondRowItemsPerRow = clamped
+                return
+            }
+            defaults.set(clamped, forKey: Key.secondRowItemsPerRow)
+        }
     }
 
     /// When enabled, clicking the Eave anchor icon opens the Notch Bar drawer instead of expanding inline.
@@ -114,8 +143,25 @@ final class EaveSettings {
         self.rehideDelaySeconds = defaults.object(forKey: Key.rehideDelaySeconds) as? Double ?? 8.0
         self.rehideOnAppSwitch = defaults.object(forKey: Key.rehideOnAppSwitch) as? Bool ?? true
         self.expandOnMenuBarScroll = defaults.object(forKey: Key.expandOnMenuBarScroll) as? Bool ?? true
-        self.expandOnMenuBarHover = defaults.object(forKey: Key.expandOnMenuBarHover) as? Bool ?? false
-        self.hoverDelaySeconds = defaults.object(forKey: Key.hoverDelaySeconds) as? Double ?? 0.35
+        self.expandOnEaveHover = defaults.object(forKey: Key.expandOnEaveHover) as? Bool ?? true
+        self.hoverDelaySeconds = defaults.object(forKey: Key.hoverDelaySeconds) as? Double ?? 0.20
+        if let rawMode = defaults.string(forKey: Key.hoverDisplayMode),
+           let mode = HoverDisplayMode(rawValue: rawMode) {
+            self.hoverDisplayMode = mode
+        } else {
+            self.hoverDisplayMode = .inline
+        }
+        if let rawLayout = defaults.string(forKey: Key.secondRowLayoutMode),
+           let layout = SecondRowLayoutMode(rawValue: rawLayout) {
+            self.secondRowLayoutMode = layout
+        } else {
+            self.secondRowLayoutMode = .horizontalScroll
+        }
+        if let storedPerRow = defaults.object(forKey: Key.secondRowItemsPerRow) as? Int {
+            self.secondRowItemsPerRow = Self.clampedItemsPerRow(storedPerRow)
+        } else {
+            self.secondRowItemsPerRow = Self.defaultSecondRowItemsPerRow
+        }
         self.useNotchBarOnToggle = defaults.object(forKey: Key.useNotchBarOnToggle) as? Bool ?? false
 
         self.enableNotchPeek = defaults.object(forKey: Key.enableNotchPeek) as? Bool ?? true

@@ -227,8 +227,84 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.controlcenter", ownerName: "Control Center"))
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: nil, ownerName: "Control Center"))
         XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.systemuiserver", ownerName: "SystemUIServer"))
+        XCTAssertTrue(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.apple.TextInputUI.xpc.CursorUIViewService", ownerName: "CursorUIViewService"))
         XCTAssertFalse(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "com.tencent.xinWeChat", ownerName: "WeChat"))
         XCTAssertFalse(MenuBarItemScanner.isExcludedSystemOwner(bundleIdentifier: "io.tailscale.ipn.macsys", ownerName: "Tailscale"))
+    }
+
+    func testMultiDisplayToggleFramesConversionAndProjection() {
+        let windows: [MenuBarItemScanner.RawStatusWindow] = [
+            // Built-in Retina Display (height 982, CG y=0 -> AppKit y=949)
+            .init(windowID: 1, pid: 50, ownerName: "Control Center", windowName: "eave.control.toggle", bounds: CGRect(x: 1330, y: 0, width: 26, height: 33), isOnScreen: true),
+            // External Screen 1 (CG y=-719, h=30 -> AppKit y=1671)
+            .init(windowID: 2, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: -184, y: -719, width: 26, height: 30), isOnScreen: true),
+            // External Screen 2 (CG y=0, h=30 -> AppKit y=952)
+            .init(windowID: 3, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: 3248, y: 0, width: 26, height: 30), isOnScreen: true),
+            // Collapsed hidden separator (width=5004) must NOT be treated as a toggle icon
+            .init(windowID: 4, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: -2037, y: 0, width: 5004, height: 30), isOnScreen: false)
+        ]
+
+        let frames = MenuBarManager.toggleFramesFromWindows(windows, primaryScreenHeight: 982, ownBundleID: "com.abcdlsj.eave")
+        XCTAssertEqual(frames.count, 3)
+        XCTAssertEqual(frames[0], CGRect(x: 1330, y: 949, width: 26, height: 33))
+        XCTAssertEqual(frames[1], CGRect(x: -184, y: 1671, width: 26, height: 30))
+        XCTAssertEqual(frames[2], CGRect(x: 3248, y: 952, width: 26, height: 30))
+
+        // Right-edge projection fallback across multiple monitors
+        let screens = [
+            CGRect(x: 0, y: 0, width: 1512, height: 982),
+            CGRect(x: 1512, y: -98, width: 1920, height: 1080)
+        ]
+        let projected = MenuBarManager.projectedToggleFrames(
+            from: CGRect(x: 1330, y: 949, width: 26, height: 33),
+            screens: screens
+        )
+        XCTAssertEqual(projected.count, 2)
+        XCTAssertEqual(projected[1].maxX, 3432 - (1512 - 1356), accuracy: 1.0)
+    }
+
+    func testTahoeControlCenterProxyWindowDiscoveryAndDeduplication() {
+        let apps: [MenuBarItemScanner.RunningAppSnapshot] = [
+            .init(pid: 101, bundleIdentifier: "com.tencent.xinWeChat", appName: "WeChat"),
+            .init(pid: 102, bundleIdentifier: "io.tailscale.ipn.macsys", appName: "Tailscale"),
+            .init(pid: 103, bundleIdentifier: "com.kyome.RunCat", appName: "RunCat")
+        ]
+
+        // Simulated macOS 26 Tahoe layer-25 windows across two external monitors.
+        let windows: [MenuBarItemScanner.RawStatusWindow] = [
+            // Screen 2 Eave collapsed separator + hidden & visible apps
+            .init(windowID: 1, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: -2037, y: 0, width: 5004, height: 30), isOnScreen: false),
+            .init(windowID: 2, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: 3248, y: 0, width: 26, height: 30), isOnScreen: true),
+            .init(windowID: 3, pid: 50, ownerName: "Control Center", windowName: "com.tencent.xinWeChat", bounds: CGRect(x: -2083, y: 0, width: 26, height: 30), isOnScreen: false),
+            .init(windowID: 4, pid: 50, ownerName: "Control Center", windowName: "io.tailscale.ipn.macsys", bounds: CGRect(x: -2155, y: 0, width: 26, height: 30), isOnScreen: false),
+            .init(windowID: 5, pid: 50, ownerName: "Control Center", windowName: "com.kyome.RunCat", bounds: CGRect(x: 3163, y: 0, width: 32, height: 30), isOnScreen: true),
+            // Duplicate proxy windows on Screen 1 (y = -719) — should be deduplicated cleanly
+            .init(windowID: 6, pid: 50, ownerName: "Control Center", windowName: "com.abcdlsj.eave", bounds: CGRect(x: -5469, y: -719, width: 5004, height: 30), isOnScreen: false),
+            .init(windowID: 7, pid: 50, ownerName: "Control Center", windowName: "com.tencent.xinWeChat", bounds: CGRect(x: -5515, y: -719, width: 26, height: 30), isOnScreen: false),
+            .init(windowID: 8, pid: 50, ownerName: "Control Center", windowName: "com.kyome.RunCat", bounds: CGRect(x: -269, y: -719, width: 32, height: 30), isOnScreen: true),
+            // System Control Center modules should remain excluded
+            .init(windowID: 9, pid: 50, ownerName: "Control Center", windowName: "Clock", bounds: CGRect(x: 1386, y: 0, width: 128, height: 33), isOnScreen: true),
+            .init(windowID: 10, pid: 50, ownerName: "Control Center", windowName: "BentoBox-0", bounds: CGRect(x: 1356, y: 0, width: 30, height: 33), isOnScreen: true)
+        ]
+
+        let parsed = MenuBarItemScanner.parseStatusWindows(
+            windows,
+            runningApps: apps,
+            menuBarHeight: 33,
+            hiddenSeparatorX: 1049,
+            alwaysHiddenSeparatorX: nil,
+            excludingWindowIDs: [],
+            ownPID: 999,
+            ownBundleID: "com.abcdlsj.eave"
+        )
+
+        XCTAssertEqual(parsed.count, 3)
+        let byBundle = Dictionary(uniqueKeysWithValues: parsed.compactMap { item in
+            item.bundleIdentifier.map { ($0, item) }
+        })
+        XCTAssertEqual(byBundle["com.tencent.xinWeChat"]?.section, .hidden)
+        XCTAssertEqual(byBundle["io.tailscale.ipn.macsys"]?.section, .hidden)
+        XCTAssertEqual(byBundle["com.kyome.RunCat"]?.section, .visible)
     }
 
     // MARK: - EaveSettings Persistence Tests
@@ -240,13 +316,123 @@ final class EaveCoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let s1 = EaveSettings(defaults: defaults)
+        XCTAssertTrue(s1.expandOnEaveHover)
+        XCTAssertEqual(s1.hoverDisplayMode, .inline)
+        XCTAssertEqual(s1.secondRowLayoutMode, .horizontalScroll)
+        XCTAssertEqual(s1.secondRowItemsPerRow, EaveSettings.defaultSecondRowItemsPerRow)
+
         s1.rehideDelaySeconds = 12
+        s1.expandOnEaveHover = false
+        s1.hoverDisplayMode = .secondRow
+        s1.secondRowLayoutMode = .multiRow
+        s1.secondRowItemsPerRow = 6
         s1.addWatchedBundleID("com.example.one")
         s1.addWatchedBundleID("com.example.one")
         s1.addWatchedBundleID("  com.example.two  ")
 
         let s2 = EaveSettings(defaults: defaults)
         XCTAssertEqual(s2.rehideDelaySeconds, 12)
+        XCTAssertFalse(s2.expandOnEaveHover)
+        XCTAssertEqual(s2.hoverDisplayMode, .secondRow)
+        XCTAssertEqual(s2.secondRowLayoutMode, .multiRow)
+        XCTAssertEqual(s2.secondRowItemsPerRow, 6)
         XCTAssertEqual(s2.watchedBundleIDs, ["com.example.one", "com.example.two"])
+
+        // Clamping invariants for items per row
+        s2.secondRowItemsPerRow = 1
+        XCTAssertEqual(s2.secondRowItemsPerRow, EaveSettings.secondRowItemsPerRowRange.lowerBound)
+        s2.secondRowItemsPerRow = 99
+        XCTAssertEqual(s2.secondRowItemsPerRow, EaveSettings.secondRowItemsPerRowRange.upperBound)
+    }
+
+    // MARK: - Compact Divider & Second-Row Layout Tests
+
+    @MainActor
+    func testCompactSeparatorWidth() {
+        XCTAssertLessThanOrEqual(MenuBarManager.expandedSeparatorLength, 12)
+        XCTAssertGreaterThanOrEqual(MenuBarManager.expandedSeparatorLength, 8)
+    }
+
+    func testSecondRowChunkingAndLayoutMetrics() {
+        let rows = SecondRowLayoutMetrics.chunkedRows(Array(1...10), itemsPerRow: 4)
+        XCTAssertEqual(rows, [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10]])
+
+        let empty = SecondRowLayoutMetrics.resolve(itemCount: 0, itemsPerRow: 8, layoutMode: .horizontalScroll)
+        XCTAssertEqual(empty.columns, 0)
+        XCTAssertEqual(empty.rows, 0)
+        XCTAssertGreaterThan(empty.contentWidth, 200)
+
+        // Horizontal scroll mode: single row bounded to itemsPerRow, horizontally scrollable when overflowing
+        let hScroll = SecondRowLayoutMetrics.resolve(itemCount: 10, itemsPerRow: 5, layoutMode: .horizontalScroll)
+        XCTAssertEqual(hScroll.columns, 5)
+        XCTAssertEqual(hScroll.rows, 1)
+        XCTAssertEqual(hScroll.visibleRows, 1)
+        XCTAssertTrue(hScroll.isHorizontallyScrollable)
+        XCTAssertFalse(hScroll.isVerticallyScrollable)
+
+        let compact = SecondRowLayoutMetrics.resolve(itemCount: 3, itemsPerRow: 8, layoutMode: .horizontalScroll)
+        XCTAssertEqual(compact.columns, 3)
+        XCTAssertEqual(compact.rows, 1)
+        XCTAssertFalse(compact.isHorizontallyScrollable)
+
+        // Multi-row wrap mode
+        let multiRow = SecondRowLayoutMetrics.resolve(itemCount: 11, itemsPerRow: 5, layoutMode: .multiRow)
+        XCTAssertEqual(multiRow.columns, 5)
+        XCTAssertEqual(multiRow.rows, 3)
+        XCTAssertEqual(multiRow.visibleRows, 3)
+        XCTAssertFalse(multiRow.isVerticallyScrollable)
+
+        let tall = SecondRowLayoutMetrics.resolve(itemCount: 30, itemsPerRow: 5, layoutMode: .multiRow)
+        XCTAssertEqual(tall.rows, 6)
+        XCTAssertEqual(tall.visibleRows, SecondRowLayoutMetrics.maxVisibleRows)
+        XCTAssertTrue(tall.isVerticallyScrollable)
+    }
+
+    func testSecondRowPanelFrameAnchoringAndScreenClamping() {
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let visible = CGRect(x: 0, y: 0, width: 1512, height: 944)
+        let content = CGSize(width: 320, height: 68)
+
+        // Anchored near right edge -> stays clamped within screen margin.
+        let rightAnchor = CGRect(x: 1470, y: 944, width: 28, height: 38)
+        let cardFrame = SecondRowLayoutMetrics.panelFrame(
+            contentSize: content,
+            anchorFrame: rightAnchor,
+            screenFrame: screen,
+            visibleFrame: visible,
+            menuBarHeight: 38
+        )
+        XCTAssertLessThanOrEqual(cardFrame.maxX, visible.maxX - 12)
+        XCTAssertGreaterThanOrEqual(cardFrame.minX, visible.minX + 12)
+        // Visual top sits 6pt below menu bar bottom (982 - 38 - 6 = 938)
+        XCTAssertEqual(cardFrame.maxY, 938, accuracy: 1.0)
+
+        // Anchored near left edge -> clamps safely to minX + margin.
+        let leftAnchor = CGRect(x: 20, y: 944, width: 28, height: 38)
+        let leftFrame = SecondRowLayoutMetrics.panelFrame(
+            contentSize: content,
+            anchorFrame: leftAnchor,
+            screenFrame: screen,
+            visibleFrame: visible,
+            menuBarHeight: 38
+        )
+        XCTAssertGreaterThanOrEqual(leftFrame.minX, visible.minX + 12)
+
+        // Hover safe zone includes anchor, card, and the vertical bridge between them.
+        let bridgePoint = CGPoint(x: rightAnchor.midX, y: 941)
+        XCTAssertTrue(
+            SecondRowLayoutMetrics.isPointInHoverSafeZone(
+                bridgePoint,
+                anchorFrame: rightAnchor,
+                cardScreenFrame: cardFrame
+            )
+        )
+        XCTAssertFalse(
+            SecondRowLayoutMetrics.isPointInHoverSafeZone(
+                CGPoint(x: 100, y: 100),
+                anchorFrame: rightAnchor,
+                cardScreenFrame: cardFrame
+            )
+        )
     }
 }

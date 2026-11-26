@@ -17,6 +17,36 @@ enum MenuBarSection: String, CaseIterable, Sendable, Codable {
     }
 }
 
+/// How Eave presents hidden items when hovering over the Eave menu bar icon.
+enum HoverDisplayMode: String, CaseIterable, Identifiable, Sendable, Codable {
+    case inline
+    case secondRow
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .inline: "Inline"
+        case .secondRow: "Second Row"
+        }
+    }
+}
+
+/// How the Second-Row Bar handles hidden items exceeding `secondRowItemsPerRow`.
+enum SecondRowLayoutMode: String, CaseIterable, Identifiable, Sendable, Codable {
+    case horizontalScroll
+    case multiRow
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .horizontalScroll: "Horizontal Scroll"
+        case .multiRow: "Multi-Row"
+        }
+    }
+}
+
 /// Snapshot metadata describing a third-party or system menu bar status item.
 struct MenuBarItemInfo: Identifiable, Sendable, Equatable, Hashable {
     let id: String

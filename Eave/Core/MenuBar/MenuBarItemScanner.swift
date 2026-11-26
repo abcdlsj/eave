@@ -138,14 +138,19 @@ enum MenuBarSearchEngine {
 final class MenuBarItemScanner {
     private nonisolated static let statusItemWindowLayer = 25
 
-    /// System daemons whose internal menu bar modules should be excluded from Eave's Notch Bar & Search.
+    /// System daemons and non-menu-bar XPC/ViewService helpers that should be excluded from AX/window scanning.
     nonisolated static func isExcludedSystemOwner(bundleIdentifier: String?, ownerName: String) -> Bool {
         if let bundle = bundleIdentifier?.lowercased() {
             if bundle == "com.apple.controlcenter"
                 || bundle == "com.apple.windowserver"
                 || bundle == "com.apple.systemuiserver"
                 || bundle == "com.apple.spotlight"
-                || bundle == "com.apple.siri" {
+                || bundle == "com.apple.siri"
+                || bundle.hasPrefix("com.apple.webkit.")
+                || bundle.hasPrefix("com.apple.appkit.xpc.")
+                || bundle.contains("viewservice")
+                || bundle.contains("autofill")
+                || bundle.contains("cursoruiviewservice") {
                 return true
             }
         }
@@ -153,29 +158,49 @@ final class MenuBarItemScanner {
         return lowerOwner == "control center"
             || lowerOwner == "window server"
             || lowerOwner == "systemuiserver"
+            || lowerOwner.contains("viewservice")
+            || lowerOwner.hasPrefix("autofill (")
+    }
+
+    /// Raw snapshot of a CGWindowList layer-25 entry, isolated for deterministic unit testing.
+    struct RawStatusWindow: Sendable {
+        let windowID: CGWindowID
+        let pid: pid_t
+        let ownerName: String
+        let windowName: String
+        let bounds: CGRect
+        let isOnScreen: Bool
     }
 
     /// Lightweight sendable process info gathered on MainActor before off-main AX scanning.
-    private struct RunningAppSnapshot: Sendable {
+    struct RunningAppSnapshot: Sendable {
         let pid: pid_t
         let bundleIdentifier: String?
         let appName: String
     }
 
+    /// Cached PIDs known to own an `AXExtrasMenuBar` plus PIDs already checked since last launch sweep,
+    /// cutting repeat AX scans from ~300ms down to <15ms.
+    private var knownMenuBarPIDs = Set<pid_t>()
+    private var scannedPIDs = Set<pid_t>()
+
     /// Scans menu bar items off the main thread so Accessibility IPC never causes UI stutter.
     func scanAsync(
         hiddenSeparatorX: CGFloat?,
         alwaysHiddenSeparatorX: CGFloat?,
-        excludingWindowIDs: Set<CGWindowID>
+        excludingWindowIDs: Set<CGWindowID>,
+        forceFullAXSweep: Bool = false
     ) async -> [MenuBarItemInfo] {
         let primaryHeight = NotchGeometryResolver.currentGeometry().menuBarHeight
         let ownPID = ProcessInfo.processInfo.processIdentifier
+        let ownBundleID = Bundle.main.bundleIdentifier?.lowercased() ?? "com.abcdlsj.eave"
         let axTrusted = AXIsProcessTrusted()
 
-        // Snapshot running apps quickly on MainActor (microseconds), then do all IPC off-main.
+        // Snapshot eligible apps quickly on MainActor — skip `.prohibited` background XPC services
+        // (e.g. CursorUIViewService / WebContent) which can never host NSStatusItems and stall AX IPC.
         let runningApps: [RunningAppSnapshot] = NSWorkspace.shared.runningApplications.compactMap { app in
             let pid = app.processIdentifier
-            guard pid != ownPID, !app.isTerminated else { return nil }
+            guard pid != ownPID, !app.isTerminated, app.activationPolicy != .prohibited else { return nil }
             let name = app.localizedName ?? app.bundleIdentifier ?? "App"
             if Self.isExcludedSystemOwner(bundleIdentifier: app.bundleIdentifier, ownerName: name) {
                 return nil
@@ -183,17 +208,37 @@ final class MenuBarItemScanner {
             return RunningAppSnapshot(pid: pid, bundleIdentifier: app.bundleIdentifier, appName: name)
         }
 
-        return await Task.detached(priority: .utility) {
+        let livePIDs = Set(runningApps.map(\.pid))
+        knownMenuBarPIDs.formIntersection(livePIDs)
+        scannedPIDs.formIntersection(livePIDs)
+
+        let axCandidates: [RunningAppSnapshot]
+        if forceFullAXSweep || scannedPIDs.isEmpty {
+            axCandidates = runningApps
+        } else {
+            // Query known menu-bar apps + any newly launched processes not yet inspected.
+            axCandidates = runningApps.filter { knownMenuBarPIDs.contains($0.pid) || !scannedPIDs.contains($0.pid) }
+        }
+
+        let (items, discoveredAXPIDs) = await Task.detached(priority: .userInitiated) {
             Self.performBackgroundScan(
                 runningApps: runningApps,
+                axCandidates: axCandidates,
                 menuBarHeight: primaryHeight,
                 hiddenSeparatorX: hiddenSeparatorX,
                 alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
                 excludingWindowIDs: excludingWindowIDs,
                 ownPID: ownPID,
+                ownBundleID: ownBundleID,
                 axTrusted: axTrusted
             )
         }.value
+
+        if axTrusted {
+            scannedPIDs.formUnion(axCandidates.map(\.pid))
+            knownMenuBarPIDs.formUnion(discoveredAXPIDs)
+        }
+        return items
     }
 
     /// Synchronous convenience scan (used only when an immediate coordinate lookup is required).
@@ -204,9 +249,10 @@ final class MenuBarItemScanner {
     ) -> [MenuBarItemInfo] {
         let primaryHeight = NotchGeometryResolver.currentGeometry().menuBarHeight
         let ownPID = ProcessInfo.processInfo.processIdentifier
+        let ownBundleID = Bundle.main.bundleIdentifier?.lowercased() ?? "com.abcdlsj.eave"
         let runningApps: [RunningAppSnapshot] = NSWorkspace.shared.runningApplications.compactMap { app in
             let pid = app.processIdentifier
-            guard pid != ownPID, !app.isTerminated else { return nil }
+            guard pid != ownPID, !app.isTerminated, app.activationPolicy != .prohibited else { return nil }
             let name = app.localizedName ?? app.bundleIdentifier ?? "App"
             if Self.isExcludedSystemOwner(bundleIdentifier: app.bundleIdentifier, ownerName: name) {
                 return nil
@@ -215,104 +261,290 @@ final class MenuBarItemScanner {
         }
         return Self.performBackgroundScan(
             runningApps: runningApps,
+            axCandidates: runningApps,
             menuBarHeight: primaryHeight,
             hiddenSeparatorX: hiddenSeparatorX,
             alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
             excludingWindowIDs: excludingWindowIDs,
             ownPID: ownPID,
+            ownBundleID: ownBundleID,
             axTrusted: AXIsProcessTrusted()
-        )
+        ).items
     }
 
     private nonisolated static func performBackgroundScan(
         runningApps: [RunningAppSnapshot],
+        axCandidates: [RunningAppSnapshot],
         menuBarHeight: CGFloat,
         hiddenSeparatorX: CGFloat?,
         alwaysHiddenSeparatorX: CGFloat?,
         excludingWindowIDs: Set<CGWindowID>,
         ownPID: pid_t,
+        ownBundleID: String,
         axTrusted: Bool
-    ) -> [MenuBarItemInfo] {
+    ) -> (items: [MenuBarItemInfo], discoveredAXPIDs: Set<pid_t>) {
         var discovered: [MenuBarItemInfo] = []
+        var axPIDs = Set<pid_t>()
 
-        if axTrusted {
-            discovered = scanAccessibilityExtras(
-                runningApps: runningApps,
+        if axTrusted && !axCandidates.isEmpty {
+            discovered = scanAccessibilityExtrasParallel(
+                runningApps: axCandidates,
                 hiddenSeparatorX: hiddenSeparatorX,
                 alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
             )
+            axPIDs = Set(discovered.map(\.pid))
         }
 
-        let appByPID = Dictionary(uniqueKeysWithValues: runningApps.map { ($0.pid, $0) })
         let windowItems = scanWindowList(
-            appByPID: appByPID,
+            runningApps: runningApps,
             menuBarHeight: menuBarHeight,
             hiddenSeparatorX: hiddenSeparatorX,
             alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
             excludingWindowIDs: excludingWindowIDs,
-            ownPID: ownPID
+            ownPID: ownPID,
+            ownBundleID: ownBundleID
         )
 
         for winItem in windowItems {
             let alreadyPresent = discovered.contains { existing in
-                existing.pid == winItem.pid && abs(existing.frame.midX - winItem.frame.midX) < 16
+                if existing.pid == winItem.pid {
+                    return abs(existing.frame.midX - winItem.frame.midX) < 16
+                        || (existing.bundleIdentifier != nil && existing.bundleIdentifier == winItem.bundleIdentifier)
+                }
+                return false
             }
             if !alreadyPresent {
                 discovered.append(winItem)
             }
         }
 
-        return discovered.sorted { $0.frame.minX < $1.frame.minX }
+        return (discovered.sorted { $0.frame.minX < $1.frame.minX }, axPIDs)
     }
 
     // MARK: - Track 1: CGWindowList
 
-    private nonisolated static func scanWindowList(
-        appByPID: [pid_t: RunningAppSnapshot],
-        menuBarHeight: CGFloat,
-        hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?,
-        excludingWindowIDs: Set<CGWindowID>,
-        ownPID: pid_t
-    ) -> [MenuBarItemInfo] {
+    nonisolated static func fetchRawStatusWindows() -> [RawStatusWindow] {
         guard let rawList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
 
-        let maxBarY = max(menuBarHeight + 10, 46)
-        var results: [MenuBarItemInfo] = []
+        var rawWindows: [RawStatusWindow] = []
+        rawWindows.reserveCapacity(64)
 
         for entry in rawList {
             guard let layer = entry[kCGWindowLayer as String] as? Int,
                   layer == statusItemWindowLayer,
                   let windowNumber = entry[kCGWindowNumber as String] as? UInt32,
-                  !excludingWindowIDs.contains(windowNumber),
                   let pid = entry[kCGWindowOwnerPID as String] as? pid_t,
-                  pid != ownPID,
                   let boundsDict = entry[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
                 continue
             }
 
+            let ownerName = (entry[kCGWindowOwnerName as String] as? String) ?? ""
+            let windowName = (entry[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let isOnScreen = (entry[kCGWindowIsOnscreen as String] as? Bool) ?? false
+
+            rawWindows.append(
+                RawStatusWindow(
+                    windowID: windowNumber,
+                    pid: pid,
+                    ownerName: ownerName,
+                    windowName: windowName,
+                    bounds: bounds,
+                    isOnScreen: isOnScreen
+                )
+            )
+        }
+        return rawWindows
+    }
+
+    private nonisolated static func scanWindowList(
+        runningApps: [RunningAppSnapshot],
+        menuBarHeight: CGFloat,
+        hiddenSeparatorX: CGFloat?,
+        alwaysHiddenSeparatorX: CGFloat?,
+        excludingWindowIDs: Set<CGWindowID>,
+        ownPID: pid_t,
+        ownBundleID: String
+    ) -> [MenuBarItemInfo] {
+        let rawWindows = fetchRawStatusWindows()
+        return parseStatusWindows(
+            rawWindows,
+            runningApps: runningApps,
+            menuBarHeight: menuBarHeight,
+            hiddenSeparatorX: hiddenSeparatorX,
+            alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
+            excludingWindowIDs: excludingWindowIDs,
+            ownPID: ownPID,
+            ownBundleID: ownBundleID
+        )
+    }
+
+    /// Pure parser handling both classic third-party status windows AND macOS 26 Tahoe's
+    /// Control Center proxy status windows (where `ownerName == "Control Center"` and `windowName`
+    /// carries the owning app's bundle identifier).
+    nonisolated static func parseStatusWindows(
+        _ rawWindows: [RawStatusWindow],
+        runningApps: [RunningAppSnapshot],
+        menuBarHeight: CGFloat,
+        hiddenSeparatorX: CGFloat?,
+        alwaysHiddenSeparatorX: CGFloat?,
+        excludingWindowIDs: Set<CGWindowID>,
+        ownPID: pid_t,
+        ownBundleID: String = "com.abcdlsj.eave"
+    ) -> [MenuBarItemInfo] {
+        let appByPID = Dictionary(uniqueKeysWithValues: runningApps.map { ($0.pid, $0) })
+        var appByBundleID: [String: RunningAppSnapshot] = [:]
+        for app in runningApps {
+            if let bid = app.bundleIdentifier?.lowercased(), !bid.isEmpty {
+                appByBundleID[bid] = app
+            }
+        }
+
+        let maxBarY = max(menuBarHeight + 10, 46)
+        let lowerOwnBundle = ownBundleID.lowercased()
+
+        // Collect per-display-band Eave separator bounds from Control Center proxy windows so
+        // multi-monitor proxy items are classified against their own display's separator.
+        struct BandSeparator {
+            let minY: CGFloat
+            let height: CGFloat
+            let hiddenMaxX: CGFloat
+            let isCollapsed: Bool
+        }
+
+        var bandSeparators: [BandSeparator] = []
+        var eaveBandWindows: [(minY: CGFloat, height: CGFloat, bounds: CGRect, name: String)] = []
+        for win in rawWindows {
+            let lowerOwner = win.ownerName.lowercased()
+            guard lowerOwner == "control center" else { continue }
+            let lowerName = win.windowName.lowercased()
+            if lowerName == "eave.control.hidden" || lowerName == lowerOwnBundle {
+                eaveBandWindows.append((win.bounds.minY, win.bounds.height, win.bounds, lowerName))
+            }
+        }
+
+        // Group Eave proxy windows by (minY, height) band.
+        for candidate in eaveBandWindows {
+            if candidate.name == "eave.control.hidden" || candidate.bounds.width >= 200 {
+                bandSeparators.append(
+                    BandSeparator(
+                        minY: candidate.minY,
+                        height: candidate.height,
+                        hiddenMaxX: candidate.bounds.maxX,
+                        isCollapsed: candidate.bounds.width >= 200
+                    )
+                )
+            }
+        }
+
+        // When expanded, Eave's hidden separator on secondary displays is a small (<= 30pt) window
+        // named with `ownBundleID` to the left of Eave's toggle item on the same display band.
+        for candidate in eaveBandWindows where candidate.name == lowerOwnBundle && candidate.bounds.width < 200 {
+            let hasBandSep = bandSeparators.contains {
+                abs($0.minY - candidate.minY) <= 4 && abs($0.height - candidate.height) <= 4
+            }
+            if !hasBandSep {
+                let peers = eaveBandWindows.filter {
+                    $0.name == lowerOwnBundle
+                        && abs($0.minY - candidate.minY) <= 4
+                        && abs($0.height - candidate.height) <= 4
+                }
+                if peers.count >= 2, let leftmost = peers.min(by: { $0.bounds.minX < $1.bounds.minX }) {
+                    bandSeparators.append(
+                        BandSeparator(
+                            minY: leftmost.minY,
+                            height: leftmost.height,
+                            hiddenMaxX: leftmost.bounds.maxX,
+                            isCollapsed: false
+                        )
+                    )
+                }
+            }
+        }
+
+        var results: [MenuBarItemInfo] = []
+        var seenProxyBundles = Set<String>()
+
+        for win in rawWindows {
+            guard !excludingWindowIDs.contains(win.windowID) else { continue }
+            let bounds = win.bounds
             guard bounds.width >= 4, bounds.width <= 320,
                   bounds.height >= 8, bounds.height <= maxBarY,
-                  bounds.minY >= -4, bounds.minY <= maxBarY,
                   !(bounds.minX == 0 && bounds.minY == 0) else {
                 continue
             }
 
-            let snap = appByPID[pid]
-            let ownerName = (entry[kCGWindowOwnerName as String] as? String)
-                ?? snap?.appName
-                ?? "Unknown"
+            let lowerOwner = win.ownerName.lowercased()
+
+            // Track 1A: macOS 26 Tahoe Control Center proxy windows whose windowName is a third-party bundle ID.
+            if lowerOwner == "control center" {
+                let lowerName = win.windowName.lowercased()
+                guard !lowerName.isEmpty,
+                      lowerName != lowerOwnBundle,
+                      let proxiedApp = appByBundleID[lowerName],
+                      !isExcludedSystemOwner(bundleIdentifier: proxiedApp.bundleIdentifier, ownerName: proxiedApp.appName) else {
+                    continue
+                }
+
+                // Deduplicate multi-monitor proxy copies of the same app (preferring bands closest to y == 0).
+                guard seenProxyBundles.insert(lowerName).inserted else { continue }
+
+                let matchedSep = bandSeparators.first {
+                    abs($0.minY - bounds.minY) <= 4 && abs($0.height - bounds.height) <= 4
+                }
+
+                let section: MenuBarSection
+                if let sep = matchedSep {
+                    if sep.isCollapsed && !win.isOnScreen {
+                        section = .hidden
+                    } else {
+                        section = MenuBarSearchEngine.classifySection(
+                            itemMidX: bounds.midX,
+                            hiddenSeparatorX: sep.hiddenMaxX,
+                            alwaysHiddenSeparatorX: nil
+                        )
+                    }
+                } else if !win.isOnScreen {
+                    section = .hidden
+                } else {
+                    section = MenuBarSearchEngine.classifySection(
+                        itemMidX: bounds.midX,
+                        hiddenSeparatorX: hiddenSeparatorX,
+                        alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+                    )
+                }
+
+                results.append(
+                    MenuBarItemInfo(
+                        id: "cc.\(proxiedApp.pid).\(lowerName)",
+                        windowID: win.windowID,
+                        pid: proxiedApp.pid,
+                        bundleIdentifier: proxiedApp.bundleIdentifier,
+                        appName: proxiedApp.appName,
+                        title: "",
+                        frame: bounds,
+                        section: section
+                    )
+                )
+                continue
+            }
+
+            // Track 1B: Classic directly-owned third-party status windows (macOS 15 and direct apps).
+            guard win.pid != ownPID,
+                  bounds.minY >= -4, bounds.minY <= maxBarY else {
+                continue
+            }
+
+            let snap = appByPID[win.pid]
+            let ownerName = !win.ownerName.isEmpty ? win.ownerName : (snap?.appName ?? "Unknown")
             let bundleID = snap?.bundleIdentifier
 
             if isExcludedSystemOwner(bundleIdentifier: bundleID, ownerName: ownerName) {
                 continue
             }
-
-            let title = (entry[kCGWindowName as String] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
             let section = MenuBarSearchEngine.classifySection(
                 itemMidX: bounds.midX,
@@ -322,12 +554,12 @@ final class MenuBarItemScanner {
 
             results.append(
                 MenuBarItemInfo(
-                    id: "win.\(windowNumber)",
-                    windowID: windowNumber,
-                    pid: pid,
+                    id: "win.\(win.windowID)",
+                    windowID: win.windowID,
+                    pid: win.pid,
                     bundleIdentifier: bundleID,
                     appName: ownerName,
-                    title: title,
+                    title: win.windowName,
                     frame: bounds,
                     section: section
                 )
@@ -337,31 +569,57 @@ final class MenuBarItemScanner {
         return results
     }
 
-    // MARK: - Track 2: AXExtrasMenuBar
+    // MARK: - Track 2: Parallel AXExtrasMenuBar (Hard 50ms Timeout per Process)
 
-    private nonisolated static func scanAccessibilityExtras(
+    private final class LockedItemCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [MenuBarItemInfo] = []
+
+        func append(contentsOf items: [MenuBarItemInfo]) {
+            guard !items.isEmpty else { return }
+            lock.lock()
+            storage.append(contentsOf: items)
+            lock.unlock()
+        }
+
+        func drain() -> [MenuBarItemInfo] {
+            lock.lock()
+            let result = storage
+            lock.unlock()
+            return result
+        }
+    }
+
+    private nonisolated static func scanAccessibilityExtrasParallel(
         runningApps: [RunningAppSnapshot],
         hiddenSeparatorX: CGFloat?,
         alwaysHiddenSeparatorX: CGFloat?
     ) -> [MenuBarItemInfo] {
-        var results: [MenuBarItemInfo] = []
-
-        for app in runningApps {
+        let collector = LockedItemCollector()
+        DispatchQueue.concurrentPerform(iterations: runningApps.count) { idx in
+            let app = runningApps[idx]
             let appElement = AXUIElementCreateApplication(app.pid)
+            AXUIElementSetMessagingTimeout(appElement, 0.05)
+
             var extrasRef: CFTypeRef?
             guard AXUIElementCopyAttributeValue(appElement, "AXExtrasMenuBar" as CFString, &extrasRef) == .success,
                   let extrasRef else {
-                continue
+                return
             }
 
             let extrasBar = extrasRef as! AXUIElement
+            AXUIElementSetMessagingTimeout(extrasBar, 0.05)
+
             var childrenRef: CFTypeRef?
             guard AXUIElementCopyAttributeValue(extrasBar, kAXChildrenAttribute as CFString, &childrenRef) == .success,
-                  let children = childrenRef as? [AXUIElement] else {
-                continue
+                  let children = childrenRef as? [AXUIElement], !children.isEmpty else {
+                return
             }
 
+            var appItems: [MenuBarItemInfo] = []
+            appItems.reserveCapacity(children.count)
             for (index, item) in children.enumerated() {
+                AXUIElementSetMessagingTimeout(item, 0.05)
                 guard let frame = axFrame(of: item), frame.width >= 4 else { continue }
                 let title = axString(item, kAXTitleAttribute)
                     ?? axString(item, kAXDescriptionAttribute)
@@ -373,7 +631,7 @@ final class MenuBarItemScanner {
                     alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
                 )
 
-                results.append(
+                appItems.append(
                     MenuBarItemInfo(
                         id: "ax.\(app.pid).\(index)",
                         windowID: 0,
@@ -386,9 +644,10 @@ final class MenuBarItemScanner {
                     )
                 )
             }
+            collector.append(contentsOf: appItems)
         }
 
-        return results
+        return collector.drain()
     }
 
     private nonisolated static func axString(_ element: AXUIElement, _ attribute: String) -> String? {

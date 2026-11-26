@@ -238,8 +238,8 @@ private struct NotchBarIconTile: View {
 
     @State private var isHovered = false
 
-    private var resolved: AppIconService.ResolvedIcon {
-        AppIconService.shared.resolve(for: captured.info)
+    private var resolved: (image: NSImage?, symbolName: String?) {
+        AppIconService.shared.resolveIconOnly(for: captured.info)
     }
 
     var body: some View {

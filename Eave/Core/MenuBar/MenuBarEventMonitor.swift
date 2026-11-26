@@ -15,11 +15,18 @@ final class MenuBarEventMonitor {
 
     var onScrollExpand: (() -> Void)?
     var onScrollCollapse: (() -> Void)?
-    var onHoverExpand: (() -> Void)?
+    var onHoverExpand: ((CGRect?) -> Void)?
     var onOutsideClick: (() -> Void)?
     var onMouseMoved: ((CGPoint) -> Void)?
-    /// Returns true only when the Notch panel is non-idle and actually needs pointer hit-test updates.
+    /// Returns true when any floating overlay (Notch or Second Row Bar) needs pointer tracking.
     var needsPointerTracking: (() -> Bool)?
+    /// Screen-space frames of Eave's toggle button across ALL connected displays.
+    var toggleItemFramesProvider: (() -> [CGRect])?
+    /// Returns true if hover expansion should be temporarily suppressed (e.g. context menu or another panel open).
+    var isHoverSuppressed: (() -> Bool)?
+
+    private var isPointerOverEaveToggle: Bool = false
+    private var hoveredToggleFrame: CGRect?
 
     init(settings: EaveSettings) {
         self.settings = settings
@@ -58,6 +65,56 @@ final class MenuBarEventMonitor {
         hoverTimer = nil
     }
 
+    func cancelPendingHover() {
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        isPointerOverEaveToggle = false
+        hoveredToggleFrame = nil
+    }
+
+    /// Invoked either by `StatusItemHoverView`'s native `NSTrackingArea` or by global pointer tracking
+    /// when the cursor enters or leaves any display's Eave menu bar icon.
+    func handleEaveToggleHover(isHovering: Bool, anchorFrame: CGRect? = nil) {
+        guard settings.expandOnEaveHover else {
+            cancelPendingHover()
+            return
+        }
+
+        if isHovering {
+            if let anchorFrame {
+                hoveredToggleFrame = anchorFrame
+            } else if hoveredToggleFrame == nil {
+                hoveredToggleFrame = matchingToggleFrame(at: NSEvent.mouseLocation)
+            }
+            guard !isPointerOverEaveToggle else { return }
+            isPointerOverEaveToggle = true
+
+            guard shouldAllowHoverTrigger() else { return }
+            guard hoverTimer == nil else { return }
+
+            let delay = max(0.05, min(settings.hoverDelaySeconds, 1.0))
+            hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.hoverTimer = nil
+                    let loc = NSEvent.mouseLocation
+                    guard self.settings.expandOnEaveHover,
+                          self.shouldAllowHoverTrigger(),
+                          let activeAnchor = self.matchingToggleFrame(at: loc) else {
+                        return
+                    }
+                    self.hoveredToggleFrame = activeAnchor
+                    self.onHoverExpand?(activeAnchor)
+                }
+            }
+        } else {
+            isPointerOverEaveToggle = false
+            hoveredToggleFrame = nil
+            hoverTimer?.invalidate()
+            hoverTimer = nil
+        }
+    }
+
     private func handleScroll(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint) {
         guard settings.expandOnMenuBarScroll, isInMenuBar(location) else { return }
         let now = CFAbsoluteTimeGetCurrent()
@@ -80,41 +137,48 @@ final class MenuBarEventMonitor {
     }
 
     private func handleMouseMoved(location: CGPoint) {
-        let shouldTrackNotch = needsPointerTracking?() ?? false
-        let shouldTrackHover = settings.expandOnMenuBarHover
-        // Fast-path exit when Notch is idle and menu-bar hover-expand is off: zero work per move.
-        guard shouldTrackNotch || shouldTrackHover else { return }
+        let shouldTrackOverlay = needsPointerTracking?() ?? false
+        let shouldTrackHover = settings.expandOnEaveHover
+        // Fast-path exit when overlays are idle and Eave hover-expand is off: zero work per move.
+        guard shouldTrackOverlay || shouldTrackHover else { return }
 
         // Coalesce pointer updates to ~30Hz to keep idle CPU near 0%.
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastMoveDispatchTime >= 0.032 else { return }
         lastMoveDispatchTime = now
 
-        if shouldTrackNotch {
+        if shouldTrackOverlay {
             onMouseMoved?(location)
         }
 
-        guard shouldTrackHover else {
-            if hoverTimer != nil {
-                hoverTimer?.invalidate()
-                hoverTimer = nil
-            }
-            return
-        }
-
-        if isInRightMenuBarArea(location) {
-            if hoverTimer == nil {
-                let delay = max(0.15, settings.hoverDelaySeconds)
-                hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        self?.hoverTimer = nil
-                        self?.onHoverExpand?()
-                    }
-                }
+        if shouldTrackHover {
+            let matched = matchingToggleFrame(at: location)
+            let hoveringToggle = matched != nil
+            if hoveringToggle != isPointerOverEaveToggle {
+                handleEaveToggleHover(isHovering: hoveringToggle, anchorFrame: matched)
+            } else if let matched {
+                hoveredToggleFrame = matched
             }
         } else if hoverTimer != nil {
-            hoverTimer?.invalidate()
-            hoverTimer = nil
+            cancelPendingHover()
+        }
+    }
+
+    private func shouldAllowHoverTrigger() -> Bool {
+        // Never interrupt ⌘-rearranging menu bar items, active mouse drags, or open menus/overlays.
+        guard NSEvent.pressedMouseButtons == 0 else { return false }
+        guard !NSEvent.modifierFlags.contains(.command) else { return false }
+        guard !(isHoverSuppressed?() ?? false) else { return false }
+        return true
+    }
+
+    private func matchingToggleFrame(at point: CGPoint) -> CGRect? {
+        guard let frames = toggleItemFramesProvider?(), !frames.isEmpty else {
+            return nil
+        }
+        // Small 3pt cushion absorbs sub-pixel edge jitter on Retina and external displays.
+        return frames.first { frame in
+            frame.width > 0 && frame.height > 0 && frame.insetBy(dx: -3, dy: -3).contains(point)
         }
     }
 
@@ -122,16 +186,6 @@ final class MenuBarEventMonitor {
         for screen in NSScreen.screens where screen.frame.contains(point) {
             let barHeight = max(screen.safeAreaInsets.top, 28)
             return point.y >= screen.frame.maxY - barHeight
-        }
-        return false
-    }
-
-    private func isInRightMenuBarArea(_ point: CGPoint) -> Bool {
-        for screen in NSScreen.screens where screen.frame.contains(point) {
-            let barHeight = max(screen.safeAreaInsets.top, 28)
-            let inHeight = point.y >= screen.frame.maxY - barHeight
-            let inRightHalf = point.x >= screen.frame.midX + 60
-            return inHeight && inRightHalf
         }
         return false
     }

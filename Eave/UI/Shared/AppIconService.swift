@@ -20,6 +20,28 @@ final class AppIconService {
 
     private init() {}
 
+    /// Fast icon-only lookup skipping dominant color extraction (ideal for 120fps Second-Row & Notch Bar tiles).
+    func resolveIconOnly(for item: MenuBarItemInfo) -> (image: NSImage?, symbolName: String?) {
+        let key = item.bundleIdentifier ?? "pid.\(item.pid).\(item.appName)"
+
+        if let systemSymbol = Self.systemExtraSymbol(for: item) {
+            return (nil, systemSymbol.symbol)
+        }
+
+        if let appIcon = highResAppIcon(bundleID: item.bundleIdentifier, pid: item.pid, cacheKey: key) {
+            return (appIcon, nil)
+        }
+
+        return (nil, "app.fill")
+    }
+
+    /// Pre-warms cached rasterized icons after a background scan so hover/open pays zero rasterization cost.
+    func prewarm(items: [MenuBarItemInfo]) {
+        for item in items {
+            _ = resolveIconOnly(for: item)
+        }
+    }
+
     /// Resolves the highest-quality visual icon and dominant glow color for a menu bar item.
     func resolve(for item: MenuBarItemInfo) -> ResolvedIcon {
         let key = item.bundleIdentifier ?? "pid.\(item.pid).\(item.appName)"

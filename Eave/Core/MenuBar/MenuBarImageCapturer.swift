@@ -14,10 +14,11 @@ final class MenuBarImageCapturer {
         let canCaptureLive = allowLiveCapture && CGPreflightScreenCaptureAccess()
 
         if !canCaptureLive {
+            // Views resolve cached high-DPI native App Icons via AppIconService; skip per-item NSImage copies here.
             return items.map { item in
                 CapturedMenuBarItem(
                     info: item,
-                    image: fallbackAppIcon(for: item),
+                    image: nil,
                     isLiveCapture: false
                 )
             }

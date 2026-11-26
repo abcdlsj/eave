@@ -8,12 +8,16 @@ import Observation
 @Observable
 final class MenuBarManager: NSObject {
     private static let collapsedSeparatorLength: CGFloat = 10_000
-    private static let expandedSeparatorLength: CGFloat = 18
+    /// Compact divider slot width so the separator sits tightly between Visible and Hidden items
+    /// without leaving excessive empty horizontal padding in the menu bar.
+    static let expandedSeparatorLength: CGFloat = 10
 
     private let settings: EaveSettings
 
     // Rightmost visible anchor icon (minimalist Eave glyph).
     private var toggleItem: NSStatusItem!
+    // Lightweight pass-through tracking view attached to the Eave toggle button for instant hover detection.
+    private var toggleHoverView: StatusItemHoverView?
     // Separator between Visible and Hidden sections.
     private var hiddenSeparator: NSStatusItem!
     // Optional separator between Hidden and Always-Hidden sections.
@@ -21,9 +25,13 @@ final class MenuBarManager: NSObject {
 
     private var rehideTimer: Timer?
     private var appSwitchObserver: Any?
+    private var screenParamsObserver: Any?
+    private var activeSpaceObserver: Any?
+    private var cachedMultiDisplayToggleFrames: [CGRect] = []
 
     private(set) var isHiddenExpanded: Bool = false
     private(set) var isAlwaysHiddenExpanded: Bool = false
+    private(set) var isContextMenuOpen: Bool = false
 
     /// Callbacks wired by AppCoordinator for cross-module orchestration.
     var onRequestNotchBarToggle: (() -> Void)?
@@ -31,6 +39,8 @@ final class MenuBarManager: NSObject {
     var onRequestOpenSettings: (() -> Void)?
     var onRequestTestPeek: (() -> Void)?
     var onExpansionChanged: ((Bool, Bool) -> Void)?
+    var onToggleHoverChanged: ((Bool) -> Void)?
+    var onWillHandleToggleInteraction: (() -> Void)?
     var isPointerProtectedFromRehide: (() -> Bool)?
 
     init(settings: EaveSettings) {
@@ -47,6 +57,16 @@ final class MenuBarManager: NSObject {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             appSwitchObserver = nil
         }
+        if let observer = screenParamsObserver {
+            NotificationCenter.default.removeObserver(observer)
+            screenParamsObserver = nil
+        }
+        if let observer = activeSpaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            activeSpaceObserver = nil
+        }
+        toggleHoverView?.removeFromSuperview()
+        toggleHoverView = nil
         NSStatusBar.system.removeStatusItem(toggleItem)
         NSStatusBar.system.removeStatusItem(hiddenSeparator)
         if let always = alwaysHiddenSeparator {
@@ -116,7 +136,142 @@ final class MenuBarManager: NSObject {
         scheduleAutoRehideIfNeeded()
     }
 
-    // MARK: - Separator Coordinates (Used by Phase 3 Scanner)
+    // MARK: - Separator Coordinates (Used by Phase 3 Scanner & Multi-Display Hover Bar)
+
+    /// Screen-space frame of Eave's primary toggle status item button (AppKit global coordinates).
+    var toggleItemFrame: CGRect? {
+        toggleItem.button?.window?.frame
+    }
+
+    /// Screen-space frames of Eave's toggle status item across ALL connected displays (AppKit global coordinates).
+    /// On multi-monitor macOS setups, `NSStatusItem.button?.window` only covers one display while Control Center
+    /// renders mirror toggle items on every other display.
+    var allToggleItemFrames: [CGRect] {
+        var frames = cachedMultiDisplayToggleFrames
+        if let primaryFrame = toggleItemFrame, primaryFrame.width > 0, primaryFrame.height > 0 {
+            let alreadyPresent = frames.contains { existing in
+                abs(existing.midX - primaryFrame.midX) < 12 && abs(existing.midY - primaryFrame.midY) < 12
+            }
+            if !alreadyPresent {
+                frames.insert(primaryFrame, at: 0)
+            }
+        }
+
+        // If any display still lacks a cached frame (e.g., before first window-list refresh),
+        // project the right-edge offset from the primary toggle frame so hover works immediately on all monitors.
+        let screenFrames = NSScreen.screens.map(\.frame)
+        if let anchor = frames.first, screenFrames.count > frames.count {
+            let projected = Self.projectedToggleFrames(from: anchor, screens: screenFrames)
+            for candidate in projected {
+                let exists = frames.contains { existing in
+                    abs(existing.midX - candidate.midX) < 24 && abs(existing.midY - candidate.midY) < 24
+                }
+                if !exists {
+                    frames.append(candidate)
+                }
+            }
+        }
+        return frames
+    }
+
+    /// Returns the Eave toggle icon frame on the display containing `point` (falling back to nearest/primary).
+    func toggleItemFrame(near point: CGPoint) -> CGRect? {
+        let frames = allToggleItemFrames
+        if let exact = frames.first(where: { $0.insetBy(dx: -4, dy: -4).contains(point) }) {
+            return exact
+        }
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
+            if let onScreen = frames.first(where: { screen.frame.contains(CGPoint(x: $0.midX, y: $0.midY)) }) {
+                return onScreen
+            }
+        }
+        return frames.first ?? toggleItemFrame
+    }
+
+    /// Refreshes cached multi-display Eave toggle button frames off-main using WindowServer layer-25 proxy windows.
+    func refreshToggleFramesCache() {
+        let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
+            ?? NSScreen.screens.first?.frame.height
+            ?? 982
+        let ownBundleID = Bundle.main.bundleIdentifier?.lowercased() ?? "com.abcdlsj.eave"
+
+        Task { [weak self] in
+            let frames = await Task.detached(priority: .utility) {
+                let raw = MenuBarItemScanner.fetchRawStatusWindows()
+                return Self.toggleFramesFromWindows(
+                    raw,
+                    primaryScreenHeight: primaryHeight,
+                    ownBundleID: ownBundleID
+                )
+            }.value
+            guard let self else { return }
+            if !frames.isEmpty {
+                self.cachedMultiDisplayToggleFrames = frames
+            }
+        }
+    }
+
+    /// Pure converter extracting AppKit global frames of all on-screen Eave toggle icons across displays.
+    nonisolated static func toggleFramesFromWindows(
+        _ rawWindows: [MenuBarItemScanner.RawStatusWindow],
+        primaryScreenHeight: CGFloat,
+        ownBundleID: String = "com.abcdlsj.eave"
+    ) -> [CGRect] {
+        let lowerOwn = ownBundleID.lowercased()
+        var results: [CGRect] = []
+
+        for win in rawWindows {
+            guard win.isOnScreen else { continue }
+            guard win.bounds.width >= 12, win.bounds.width <= 80,
+                  win.bounds.height >= 16, win.bounds.height <= 64 else {
+                continue
+            }
+            let lowerOwner = win.ownerName.lowercased()
+            let lowerName = win.windowName.lowercased()
+            let isToggle = (lowerOwner == "control center" && (lowerName == "eave.control.toggle" || lowerName == lowerOwn))
+                || lowerName == "eave.control.toggle"
+            guard isToggle else { continue }
+
+            // Convert CoreGraphics top-left coordinates to AppKit bottom-left coordinates.
+            let appKitY = primaryScreenHeight - win.bounds.maxY
+            let converted = CGRect(
+                x: win.bounds.minX,
+                y: appKitY,
+                width: win.bounds.width,
+                height: win.bounds.height
+            )
+            let duplicate = results.contains {
+                abs($0.midX - converted.midX) < 8 && abs($0.midY - converted.midY) < 8
+            }
+            if !duplicate {
+                results.append(converted)
+            }
+        }
+
+        return results
+    }
+
+    /// Projects a known toggle icon's right-edge offset onto other connected displays as a fast fallback.
+    nonisolated static func projectedToggleFrames(from knownFrame: CGRect, screens: [CGRect]) -> [CGRect] {
+        guard let sourceScreen = screens.first(where: { $0.contains(CGPoint(x: knownFrame.midX, y: knownFrame.midY)) }) else {
+            return [knownFrame]
+        }
+        let rightOffset = sourceScreen.maxX - knownFrame.maxX
+        guard rightOffset >= 0 else { return [knownFrame] }
+
+        return screens.map { screen in
+            if screen == sourceScreen {
+                return knownFrame
+            }
+            let height = min(knownFrame.height, 34)
+            return CGRect(
+                x: screen.maxX - rightOffset - knownFrame.width,
+                y: screen.maxY - height,
+                width: knownFrame.width,
+                height: height
+            )
+        }
+    }
 
     /// Screen-space X coordinate of the Hidden separator's right edge.
     var hiddenSeparatorX: CGFloat? {
@@ -161,7 +316,7 @@ final class MenuBarManager: NSObject {
         hiddenSeparator.autosaveName = "eave.control.hidden"
         configureSeparatorButton(
             hiddenSeparator,
-            image: Self.makeDividerImage(style: .hairline),
+            image: Self.makeDividerImage(style: .dot),
             tooltip: "Eave Hidden Section Divider (⌘-drag icons left to hide)"
         )
 
@@ -203,30 +358,31 @@ final class MenuBarManager: NSObject {
     }
 
     private enum DividerStyle {
-        case hairline
+        case dot
         case doubleDot
     }
 
-    /// Renders a crisp, minimalist template divider glyph harmonized with Eave's visual language.
+    /// Renders a crisp, ultra-compact template divider glyph harmonized with macOS menu bar aesthetics.
+    /// A precision centered dot (`•`) cleanly separates Visible and Hidden items without the clutter
+    /// or ambiguity of a pipe (`|`), while double-dot (`:`) marks the Always-Hidden boundary.
     private static func makeDividerImage(style: DividerStyle) -> NSImage {
-        let size = NSSize(width: 12, height: 18)
+        let size = NSSize(width: 8, height: 18)
         let image = NSImage(size: size, flipped: false) { rect in
             NSColor.black.setFill()
             switch style {
-            case .hairline:
-                let barW: CGFloat = 1.6
-                let barH: CGFloat = 10.5
-                let barRect = NSRect(
-                    x: (rect.width - barW) / 2,
-                    y: (rect.height - barH) / 2,
-                    width: barW,
-                    height: barH
+            case .dot:
+                let diameter: CGFloat = 4.0
+                let dotRect = NSRect(
+                    x: (rect.width - diameter) / 2,
+                    y: (rect.height - diameter) / 2,
+                    width: diameter,
+                    height: diameter
                 )
-                NSBezierPath(roundedRect: barRect, xRadius: barW / 2, yRadius: barW / 2).fill()
+                NSBezierPath(ovalIn: dotRect).fill()
 
             case .doubleDot:
                 let dot: CGFloat = 2.6
-                let gap: CGFloat = 3.2
+                let gap: CGFloat = 2.8
                 let cx = (rect.width - dot) / 2
                 let cy = rect.height / 2
                 let topRect = NSRect(x: cx, y: cy + gap / 2, width: dot, height: dot)
@@ -250,17 +406,28 @@ final class MenuBarManager: NSObject {
             button.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Eave")
         }
         button.imagePosition = .imageOnly
-        button.toolTip = "Eave — Click to toggle hidden items, ⌥+Click for always-hidden, Right-click for menu"
+        // Intentionally omit system toolTip so native macOS tooltip popups never collide with Eave's hover reveal.
+        button.toolTip = nil
+        button.setAccessibilityLabel("Eave")
         button.target = self
         button.action = #selector(handleToggleClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+        let hoverView = StatusItemHoverView(frame: button.bounds)
+        hoverView.autoresizingMask = [.width, .height]
+        hoverView.onHoverChanged = { [weak self] hovering in
+            self?.onToggleHoverChanged?(hovering)
+        }
+        button.addSubview(hoverView)
+        toggleHoverView = hoverView
     }
 
     private func configureSeparatorButton(_ item: NSStatusItem, image: NSImage, tooltip: String) {
         guard let button = item.button else { return }
         button.image = image
         button.imagePosition = .imageOnly
-        button.alphaValue = 0.38
+        button.imageScaling = .scaleNone
+        button.alphaValue = 0.72
         button.toolTip = tooltip
         button.appearsDisabled = false
     }
@@ -283,6 +450,8 @@ final class MenuBarManager: NSObject {
     // MARK: - Actions & Context Menu
 
     @objc private func handleToggleClick(_ sender: NSStatusBarButton) {
+        onWillHandleToggleInteraction?()
+
         guard let event = NSApp.currentEvent else {
             performPrimaryToggle()
             return
@@ -341,6 +510,8 @@ final class MenuBarManager: NSObject {
 
         menu.addItem(makeItem(title: "Quit Eave", symbol: "power", action: #selector(menuQuit), keyEquivalent: "q"))
 
+        isContextMenuOpen = true
+        defer { isContextMenuOpen = false }
         toggleItem.menu = menu
         button.performClick(nil)
         // Clear menu immediately so subsequent left clicks continue invoking handleToggleClick.
@@ -369,6 +540,28 @@ final class MenuBarManager: NSObject {
                 self.collapseAll()
             }
         }
+
+        screenParamsObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshToggleFramesCache()
+            }
+        }
+
+        activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshToggleFramesCache()
+            }
+        }
+
+        refreshToggleFramesCache()
     }
 
     private func scheduleAutoRehideIfNeeded() {
@@ -396,5 +589,42 @@ final class MenuBarManager: NSObject {
             return loc.y >= screen.frame.maxY - barHeight - 4
         }
         return false
+    }
+}
+
+/// Pass-through `NSView` overlay installed on the Eave `NSStatusBarButton` for zero-CPU native hover tracking.
+@MainActor
+private final class StatusItemHoverView: NSView {
+    var onHoverChanged: ((Bool) -> Void)?
+    private var trackingArea: NSTrackingArea?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Never intercept left/right clicks or ⌘-drags on the underlying status bar button.
+        nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHoverChanged?(false)
     }
 }

@@ -251,6 +251,144 @@ private struct GeneralSettingsTab: View {
                 )
             }
 
+            EaveSettingsCard("Hover Reveal") {
+                EaveSettingsToggleRow(
+                    "Hover Eave icon to show hidden items",
+                    subtitle: "Reveal tucked items automatically when your pointer rests on the Eave icon.",
+                    isOn: $settings.expandOnEaveHover.animation(EaveMotion.microSpring)
+                )
+                .onChange(of: settings.expandOnEaveHover) { _, _ in
+                    coordinator.syncHoverSettings()
+                }
+
+                if settings.expandOnEaveHover {
+                    EaveCardDivider()
+
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Display style")
+                                .font(.system(size: 13))
+                            Text(
+                                settings.hoverDisplayMode == .secondRow
+                                    ? "Show hidden items in a floating second row beneath the menu bar."
+                                    : "Expand hidden items inline inside the macOS menu bar."
+                            )
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 10)
+
+                        Picker("", selection: $settings.hoverDisplayMode.animation(EaveMotion.microSpring)) {
+                            ForEach(HoverDisplayMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10.5)
+                    .onChange(of: settings.hoverDisplayMode) { _, _ in
+                        coordinator.syncHoverSettings()
+                    }
+
+                    EaveCardDivider()
+
+                    HStack(spacing: 12) {
+                        Text("Hover delay")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.secondary)
+                        Slider(value: $settings.hoverDelaySeconds, in: 0.10...0.60, step: 0.05)
+                        Text(String(format: "%.2fs", settings.hoverDelaySeconds))
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+
+                    if settings.hoverDisplayMode == .secondRow {
+                        EaveCardDivider()
+
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Overflow layout")
+                                    .font(.system(size: 13))
+                                Text(
+                                    settings.secondRowLayoutMode == .horizontalScroll
+                                        ? "Keep a single sleek row and swipe horizontally through extra items."
+                                        : "Wrap extra items into additional rows automatically."
+                                )
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                            }
+
+                            Spacer(minLength: 10)
+
+                            Picker("", selection: $settings.secondRowLayoutMode) {
+                                ForEach(SecondRowLayoutMode.allCases) { mode in
+                                    Text(mode.title).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: 210)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10.5)
+                        .onChange(of: settings.secondRowLayoutMode) { _, _ in
+                            coordinator.syncHoverSettings()
+                        }
+
+                        EaveCardDivider()
+
+                        VStack(alignment: .leading, spacing: 11) {
+                            HStack(spacing: 12) {
+                                Text("Items per row")
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(.secondary)
+                                Slider(
+                                    value: Binding(
+                                        get: { Double(settings.secondRowItemsPerRow) },
+                                        set: { settings.secondRowItemsPerRow = Int($0.rounded()) }
+                                    ),
+                                    in: Double(EaveSettings.secondRowItemsPerRowRange.lowerBound)...Double(EaveSettings.secondRowItemsPerRowRange.upperBound),
+                                    step: 1
+                                )
+                                Text("\(settings.secondRowItemsPerRow)")
+                                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                    .monospacedDigit()
+                                    .contentTransition(.numericText())
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24, alignment: .trailing)
+                            }
+
+                            secondRowLayoutPreview
+
+                            HStack(spacing: 8) {
+                                Button("Preview Second Row") {
+                                    EaveHaptics.tick()
+                                    coordinator.showSecondRowBar(pinnedForPreview: true)
+                                }
+                                .buttonStyle(EaveSecondaryButtonStyle())
+
+                                Spacer()
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .transition(.opacity)
+                        .onChange(of: settings.secondRowItemsPerRow) { _, _ in
+                            coordinator.syncHoverSettings()
+                        }
+                    }
+                }
+            }
+
             EaveSettingsCard("Auto-Rehide & Gestures") {
                 EaveSettingsToggleRow(
                     "Automatically rehide expanded items",
@@ -281,8 +419,6 @@ private struct GeneralSettingsTab: View {
                 EaveSettingsToggleRow("Rehide when switching applications", isOn: $settings.rehideOnAppSwitch)
                 EaveCardDivider()
                 EaveSettingsToggleRow("Scroll on menu bar to expand / collapse", isOn: $settings.expandOnMenuBarScroll)
-                EaveCardDivider()
-                EaveSettingsToggleRow("Hover over right menu bar to expand", isOn: $settings.expandOnMenuBarHover)
             }
 
             EaveSettingsCard(
@@ -366,6 +502,81 @@ private struct GeneralSettingsTab: View {
             if let s = coordinator.spacingManager.config.spacing { spacingValue = Double(s) }
             if let p = coordinator.spacingManager.config.selectionPadding { paddingValue = Double(p) }
         }
+    }
+
+    private var secondRowLayoutPreview: some View {
+        let sampleSymbols = [
+            "bubble.left", "cloud", "network", "lock.shield", "terminal",
+            "music.note", "tray", "calendar", "bolt", "paperplane",
+            "waveform", "globe", "gearshape", "sparkles", "cpu", "antenna.radiowaves.left.and.right"
+        ]
+        let sampleCount = max(settings.secondRowItemsPerRow + 4, 12)
+        let previewItems = Array(sampleSymbols.prefix(min(sampleCount, sampleSymbols.count)))
+        let visibleViewportWidth = CGFloat(settings.secondRowItemsPerRow) * 22
+            + CGFloat(max(settings.secondRowItemsPerRow - 1, 0)) * 4
+
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("Second Row Preview")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Text(
+                    settings.secondRowLayoutMode == .horizontalScroll
+                        ? "\(settings.secondRowItemsPerRow) visible · swipe ↔"
+                        : "\(settings.secondRowItemsPerRow) / row"
+                )
+                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+            }
+
+            if settings.secondRowLayoutMode == .horizontalScroll {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(Array(previewItems.enumerated()), id: \.offset) { _, symbol in
+                            previewCell(symbol)
+                        }
+                    }
+                }
+                .frame(maxWidth: visibleViewportWidth, alignment: .leading)
+            } else {
+                let rows = SecondRowLayoutMetrics.chunkedRows(previewItems, itemsPerRow: settings.secondRowItemsPerRow)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                            HStack(spacing: 4) {
+                                ForEach(Array(row.enumerated()), id: \.offset) { _, symbol in
+                                    previewCell(symbol)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.065), lineWidth: 0.6)
+                )
+        )
+    }
+
+    private func previewCell(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.primary.opacity(0.72))
+            .frame(width: 22, height: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.primary.opacity(0.065))
+            )
     }
 
     private var menuBarSpacingPreview: some View {
