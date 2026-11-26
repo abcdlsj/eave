@@ -37,10 +37,11 @@ final class MenuBarClickForwarder {
             alwaysHiddenSeparatorX: menuBarManager.alwaysHiddenSeparatorX,
             excludingWindowIDs: menuBarManager.ownedWindowIDs
         )
-        let targetFrame = refreshed.first(where: {
+        let refreshedItem = refreshed.first(where: {
             ($0.windowID != 0 && $0.windowID == item.windowID) ||
             ($0.pid == item.pid && $0.title == item.title)
-        })?.frame ?? item.frame
+        })
+        let targetFrame: CGRect = refreshedItem?.frame ?? item.frame
 
         if targetFrame.width > 0 && targetFrame.minX >= 0 {
             postSyntheticClick(at: CGPoint(x: targetFrame.midX, y: targetFrame.midY))
