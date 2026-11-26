@@ -176,6 +176,24 @@ final class EaveSettings {
         }
     }
 
+    // MARK: - Section Resets (Settings "Restore Defaults")
+
+    /// Restores auto-rehide and hover reveal / Second Row behavior to first-launch defaults.
+    func resetMenuBarBehavior() {
+        rehideAutomatically = true
+        expandOnEaveHover = true
+        hoverDelaySeconds = 0.20
+        hoverDisplayMode = .secondRow
+        secondRowLayoutMode = .horizontalScroll
+        secondRowItemsPerRow = Self.defaultSecondRowItemsPerRow
+    }
+
+    /// Restores notch alert preferences. Leaves the watched-app list alone.
+    func resetNotchAlerts() {
+        enableNotchPeek = true
+        peekDurationSeconds = 4.5
+    }
+
     func resetHotKeys() {
         for action in HotKeyAction.allCases {
             setHotKey(action.defaultCombo, for: action)
