@@ -39,7 +39,7 @@ struct OnboardingView: View {
             }
         }
 
-        var subtitle: String {
+        func subtitle(hasPhysicalNotch: Bool) -> String {
             switch self {
             case .organize:
                 "Hold ⌘ and drag any menu bar icon to the left of Eave's dot divider to keep it out of sight."
@@ -48,7 +48,9 @@ struct OnboardingView: View {
             case .privacy:
                 "Core hiding needs zero permissions. Accessibility is optional, local-only, and Screen Recording is never requested."
             case .notch:
-                "When a hidden app gets a new Dock badge or a script sends a signal, Eave shows a small icon and indicator beside the camera."
+                hasPhysicalNotch
+                    ? "When a hidden app gets a new Dock badge or a script sends a signal, Eave shows a small icon and indicator beside the camera."
+                    : "When a hidden app gets a new Dock badge or a script sends a signal, Eave shows a small icon and indicator at the top center of your screen."
             }
         }
 
@@ -64,6 +66,10 @@ struct OnboardingView: View {
 
     private var effectiveColorScheme: ColorScheme {
         coordinator.settings.appearanceMode.colorScheme ?? systemColorScheme
+    }
+
+    private var hasPhysicalNotch: Bool {
+        NSScreen.screens.contains { $0.safeAreaInsets.top > 0 }
     }
 
     var body: some View {
@@ -82,7 +88,7 @@ struct OnboardingView: View {
                     Text(currentStep.title)
                         .font(.system(size: 19, weight: .semibold))
                         .tracking(-0.3)
-                    Text(currentStep.subtitle)
+                    Text(currentStep.subtitle(hasPhysicalNotch: hasPhysicalNotch))
                         .font(.system(size: 12.5))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -708,6 +714,7 @@ struct OnboardingView: View {
                     onFinish()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
             }
 
             Spacer()
@@ -741,12 +748,14 @@ struct OnboardingView: View {
                     }
                 }
                 .buttonStyle(EaveProminentButtonStyle())
+                .keyboardShortcut(.defaultAction)
             } else {
                 Button("Start Using Eave") {
                     EaveHaptics.tap()
                     onFinish()
                 }
                 .buttonStyle(EaveProminentButtonStyle())
+                .keyboardShortcut(.defaultAction)
             }
         }
     }
