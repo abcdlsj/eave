@@ -15,30 +15,32 @@ final class MenuBarSpacingManager {
     }
 
     func reload() {
-        let domain = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain) ?? [:]
-        let spacing = domain[Self.spacingKey] as? Int
-        let padding = domain[Self.paddingKey] as? Int
+        let spacing = Self.readGlobal(Self.spacingKey)
+        let padding = Self.readGlobal(Self.paddingKey)
         config = MenuBarSpacingConfig(spacing: spacing, selectionPadding: padding)
     }
 
     func apply(spacing: Int?, selectionPadding: Int?) {
-        var domain = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain) ?? [:]
-
-        if let spacing {
-            domain[Self.spacingKey] = max(2, min(spacing, 24))
-        } else {
-            domain.removeValue(forKey: Self.spacingKey)
-        }
-
-        if let selectionPadding {
-            domain[Self.paddingKey] = max(2, min(selectionPadding, 20))
-        } else {
-            domain.removeValue(forKey: Self.paddingKey)
-        }
-
-        UserDefaults.standard.setPersistentDomain(domain, forName: UserDefaults.globalDomain)
-        UserDefaults.standard.synchronize()
+        // Write only these two keys. Rewriting the whole NSGlobalDomain could clobber changes other
+        // processes made between our read and write.
+        Self.writeGlobal(Self.spacingKey, spacing.map { max(2, min($0, 24)) })
+        Self.writeGlobal(Self.paddingKey, selectionPadding.map { max(2, min($0, 20)) })
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
         reload()
+    }
+
+    private static func readGlobal(_ key: String) -> Int? {
+        CFPreferencesCopyValue(key as CFString, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Int
+    }
+
+    private static func writeGlobal(_ key: String, _ value: Int?) {
+        CFPreferencesSetValue(
+            key as CFString,
+            value.map { $0 as CFNumber },
+            kCFPreferencesAnyApplication,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
     }
 
     func resetToSystemDefault() {
