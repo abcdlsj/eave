@@ -190,9 +190,26 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.98))
+        .modifier(SidebarShortcut(tab: tab))
         .onHover { hovering in
             withAnimation(EaveMotion.hover) {
                 hoveredTab = hovering ? tab : (hoveredTab == tab ? nil : hoveredTab)
+            }
+        }
+    }
+
+    /// ⌘1 / ⌘2 / ⌘3 switch sidebar sections in order.
+    private struct SidebarShortcut: ViewModifier {
+        let tab: SettingsTab
+
+        func body(content: Content) -> some View {
+            if let index = SettingsTab.allCases.firstIndex(of: tab), index < 9 {
+                let digit = Character(String(index + 1))
+                content
+                    .keyboardShortcut(KeyEquivalent(digit), modifiers: .command)
+                    .help("\(tab.rawValue) (⌘\(index + 1))")
+            } else {
+                content
             }
         }
     }
@@ -274,6 +291,22 @@ private struct GeneralSettingsTab: View {
                 )
             )
 
+            if let error = coordinator.launchAtLogin.lastError {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.orange)
+                        .padding(.top, 1)
+                    Text("Couldn't change login item: \(error)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+                .accessibilityElement(children: .combine)
+            }
+
             EaveCardDivider()
 
             EaveSettingsToggleRow(
@@ -350,7 +383,7 @@ private struct GeneralSettingsTab: View {
                 "Hover delay",
                 subtitle: "Time pointer rests on the Eave icon before opening.",
                 value: $settings.hoverDelaySeconds,
-                in: 0.10...0.60,
+                in: 0.10...1.00,
                 step: 0.05,
                 valueText: String(format: "%.2fs", settings.hoverDelaySeconds),
                 inset: true
@@ -791,7 +824,9 @@ private struct NotchSettingsTab: View {
         EaveSettingsCard("Watched Applications") {
             EaveSettingsToggleRow(
                 "Automatically watch hidden apps",
-                subtitle: "Tracking \(coordinator.signalHub.discoveredHiddenBundleIDs.count) hidden · \(settings.watchedBundleIDs.count) pinned.",
+                subtitle: settings.watchHiddenAppsAutomatically
+                    ? "Tracking \(coordinator.signalHub.discoveredHiddenBundleIDs.count) hidden · \(settings.watchedBundleIDs.count) pinned."
+                    : "Only pinned apps are watched · \(settings.watchedBundleIDs.count) pinned.",
                 isOn: $settings.watchHiddenAppsAutomatically
             )
 
@@ -997,7 +1032,7 @@ private struct NotchSettingsTab: View {
                     if settings.enableNotchPeek {
                         Text("3")
                             .font(EaveTypography.badgeFont(size: 11.0, weight: "Fredoka-Regular"))
-                            .foregroundStyle(Color(red: 1.0, green: 0.34, blue: 0.30))
+                            .foregroundStyle(Color(eaveHex: "#34C759"))
                             .frame(width: 28)
                             .transition(.opacity)
                     }

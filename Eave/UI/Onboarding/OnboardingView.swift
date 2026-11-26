@@ -610,7 +610,7 @@ struct OnboardingView: View {
                         if settings.enableNotchPeek {
                             Text("3")
                                 .font(EaveTypography.badgeFont(size: 11.0, weight: "Fredoka-Regular"))
-                                .foregroundStyle(Color(red: 1.0, green: 0.34, blue: 0.30))
+                                .foregroundStyle(Color(eaveHex: "#34C759"))
                                 .frame(width: 28)
                                 .transition(.opacity)
                         }
