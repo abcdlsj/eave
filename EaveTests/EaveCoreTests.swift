@@ -188,6 +188,38 @@ final class EaveCoreTests: XCTestCase {
 
         let prefix = MenuBarSearchEngine.filter(items: items, query: "sla")
         XCTAssertEqual(prefix.map(\.appName), ["Slack"])
+
+        // Fuzzy character highlight offsets (substring preferred, subsequence fallback)
+        XCTAssertEqual(MenuBarSearchEngine.matchedIndices(in: "Slack", query: "lac"), Set([1, 2, 3]))
+        XCTAssertEqual(MenuBarSearchEngine.matchedIndices(in: "WeChat", query: "wc"), Set([0, 2]))
+        XCTAssertTrue(MenuBarSearchEngine.matchedIndices(in: "Slack", query: "xyz").isEmpty)
+    }
+
+    func testNotchSurfaceMetricsConsistency() {
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let geom = NotchGeometry.resolve(
+            screenFrame: screen,
+            safeAreaTop: 38,
+            auxiliaryTopLeft: CGRect(x: 0, y: 944, width: 656, height: 38),
+            auxiliaryTopRight: CGRect(x: 856, y: 944, width: 656, height: 38)
+        )
+
+        let idle = NotchSurfaceMetrics.resolve(for: .idle, geometry: geom)
+        XCTAssertFalse(idle.isVisible)
+        XCTAssertEqual(idle.width, 200)
+        XCTAssertEqual(idle.height, 38)
+
+        let alert = NotchAlert(source: .bridge, title: "Done", badge: "OK")
+        let compactPeek = NotchSurfaceMetrics.resolve(for: .peek(alert, expanded: false), geometry: geom)
+        let expandedPeek = NotchSurfaceMetrics.resolve(for: .peek(alert, expanded: true), geometry: geom)
+        let bar = NotchSurfaceMetrics.resolve(for: .bar, geometry: geom)
+
+        XCTAssertTrue(compactPeek.isVisible)
+        XCTAssertGreaterThan(compactPeek.width, idle.width)
+        XCTAssertGreaterThan(expandedPeek.width, compactPeek.width)
+        XCTAssertGreaterThan(expandedPeek.height, compactPeek.height)
+        XCTAssertGreaterThan(bar.width, expandedPeek.width)
+        XCTAssertGreaterThan(bar.height, expandedPeek.height)
     }
 
     @MainActor

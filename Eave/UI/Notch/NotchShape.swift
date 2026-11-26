@@ -1,5 +1,77 @@
 import SwiftUI
 
+/// Single source of truth for Notch surface dimensions & corner geometry across all four states,
+/// keeping `NotchContainerView` morphing and `NotchPanelController` hit-testing mathematically locked.
+struct NotchSurfaceMetrics: Equatable {
+    let width: CGFloat
+    let height: CGFloat
+    let topRadius: CGFloat
+    let bottomRadius: CGFloat
+    let shadowRadius: CGFloat
+    let shadowOpacity: Double
+    let isVisible: Bool
+
+    static func resolve(for state: NotchState, geometry: NotchGeometry) -> NotchSurfaceMetrics {
+        let baseW = geometry.notchRect.width
+        let baseH = geometry.notchRect.height
+
+        switch state {
+        case .idle:
+            return NotchSurfaceMetrics(
+                width: baseW,
+                height: baseH,
+                topRadius: 8,
+                bottomRadius: 11,
+                shadowRadius: 0,
+                shadowOpacity: 0,
+                isVisible: false
+            )
+        case .ambient:
+            return NotchSurfaceMetrics(
+                width: baseW + 58,
+                height: baseH,
+                topRadius: 8,
+                bottomRadius: 12,
+                shadowRadius: 4,
+                shadowOpacity: 0.14,
+                isVisible: true
+            )
+        case .peek(_, let expanded):
+            if expanded {
+                return NotchSurfaceMetrics(
+                    width: max(baseW + 172, 368),
+                    height: baseH + 66,
+                    topRadius: 12,
+                    bottomRadius: 20,
+                    shadowRadius: 16,
+                    shadowOpacity: 0.34,
+                    isVisible: true
+                )
+            } else {
+                return NotchSurfaceMetrics(
+                    width: baseW + 106,
+                    height: baseH,
+                    topRadius: 9,
+                    bottomRadius: 13.5,
+                    shadowRadius: 6,
+                    shadowOpacity: 0.18,
+                    isVisible: true
+                )
+            }
+        case .bar:
+            return NotchSurfaceMetrics(
+                width: 536,
+                height: max(baseH, 36) + 98,
+                topRadius: 14,
+                bottomRadius: 23,
+                shadowRadius: 20,
+                shadowOpacity: 0.38,
+                isVisible: true
+            )
+        }
+    }
+}
+
 /// Optically continuous MacBook notch silhouette with smooth concave top shoulders
 /// (fusing seamlessly into the physical top bezel) and soft squircle-like bottom curves.
 struct NotchShape: Shape {
@@ -19,33 +91,25 @@ struct NotchShape: Shape {
         let botR = min(bottomCornerRadius, (rect.width - topR * 2) * 0.45, rect.height * 0.55)
 
         var path = Path()
-        // Outer top-left flare starting flush with the hardware display edge.
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        // Smooth cubic concave shoulder curving down into the left vertical wall.
         path.addCurve(
             to: CGPoint(x: rect.minX + topR, y: rect.minY + topR),
             control1: CGPoint(x: rect.minX + topR * 0.68, y: rect.minY),
             control2: CGPoint(x: rect.minX + topR, y: rect.minY + topR * 0.32)
         )
-        // Left vertical edge.
         path.addLine(to: CGPoint(x: rect.minX + topR, y: rect.maxY - botR))
-        // Bottom-left continuous curve.
         path.addCurve(
             to: CGPoint(x: rect.minX + topR + botR, y: rect.maxY),
             control1: CGPoint(x: rect.minX + topR, y: rect.maxY - botR * 0.32),
             control2: CGPoint(x: rect.minX + topR + botR * 0.32, y: rect.maxY)
         )
-        // Bottom edge.
         path.addLine(to: CGPoint(x: rect.maxX - topR - botR, y: rect.maxY))
-        // Bottom-right continuous curve.
         path.addCurve(
             to: CGPoint(x: rect.maxX - topR, y: rect.maxY - botR),
             control1: CGPoint(x: rect.maxX - topR - botR * 0.32, y: rect.maxY),
             control2: CGPoint(x: rect.maxX - topR, y: rect.maxY - botR * 0.32)
         )
-        // Right vertical edge.
         path.addLine(to: CGPoint(x: rect.maxX - topR, y: rect.minY + topR))
-        // Smooth cubic concave shoulder flaring back out to top-right bezel.
         path.addCurve(
             to: CGPoint(x: rect.maxX, y: rect.minY),
             control1: CGPoint(x: rect.maxX - topR, y: rect.minY + topR * 0.32),
@@ -56,7 +120,7 @@ struct NotchShape: Shape {
     }
 }
 
-/// Open-top perimeter path used to render an ultra-subtle machined glass rim along the sides
+/// Open-top perimeter path used to render a whisper-thin neutral titanium rim along the sides
 /// and bottom of the notch while keeping the top edge 100% invisible against the hardware bezel.
 struct NotchBottomRimShape: Shape {
     var topCornerRadius: CGFloat
@@ -95,7 +159,7 @@ struct NotchBottomRimShape: Shape {
 
 /// Shared color and Tahoe Liquid Glass / Sequoia Material helpers.
 extension Color {
-    init(eaveHex hex: String?, fallback: Color = Color(red: 0.24, green: 0.72, blue: 0.98)) {
+    init(eaveHex hex: String?, fallback: Color = Color.white.opacity(0.85)) {
         guard let hex else {
             self = fallback
             return
@@ -124,11 +188,11 @@ struct EaveGlassBackgroundModifier: ViewModifier {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.28), Color.white.opacity(0.06)],
+                                colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 0.75
+                            lineWidth: 0.65
                         )
                 )
         } else {
@@ -141,11 +205,11 @@ struct EaveGlassBackgroundModifier: ViewModifier {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.22), Color.white.opacity(0.06)],
+                                colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 0.75
+                            lineWidth: 0.65
                         )
                 )
         }

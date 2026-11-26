@@ -30,6 +30,7 @@
 		9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65C078762E103E936EA304CE /* EaveApp.swift */; };
 		A4E72636C8ED7C8CBAE05266 /* NotchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52535BBF6DEA02E91B600F80 /* NotchBarView.swift */; };
 		A59B7A8A2DA83AB4D316D741 /* DockBadgeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */; };
+		AD127BBAFEA15634C14FEDC1 /* EaveDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1774C6F7E8BF81B85E23190 /* EaveDesignSystem.swift */; };
 		B46B1B5B20ABB1EFD398BD5F /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2E4D987DFA6DF8200B706E /* LaunchAtLoginService.swift */; };
 		BDFC17939B5BCE38530FD727 /* MenuBarSearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CE22ECF8585B626AFBF61B6 /* MenuBarSearchPanel.swift */; };
 		BE2FBA243544699A28762A21 /* MenuBarSpacingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECEF33195E368750CF215899 /* MenuBarSpacingManager.swift */; };
@@ -78,6 +79,7 @@
 		C4D18F6E17192294763A9C38 /* MenuBarAXWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarAXWatcher.swift; sourceTree = "<group>"; };
 		C554A4BC82A054F7C34D43F7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C8A82CF44B381502C961FCE1 /* SignalHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalHub.swift; sourceTree = "<group>"; };
+		D1774C6F7E8BF81B85E23190 /* EaveDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EaveDesignSystem.swift; sourceTree = "<group>"; };
 		D35FFFA469ED667D5EBC389B /* NotchPeekView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPeekView.swift; sourceTree = "<group>"; };
 		D5D47B03CA7EDB9ED825FB72 /* HotKeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyRecorderView.swift; sourceTree = "<group>"; };
 		DCB9F9CFED0A91AC144F8A2B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -174,6 +176,7 @@
 			isa = PBXGroup;
 			children = (
 				8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */,
+				D1774C6F7E8BF81B85E23190 /* EaveDesignSystem.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -362,6 +365,7 @@
 				9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */,
 				A59B7A8A2DA83AB4D316D741 /* DockBadgeMonitor.swift in Sources */,
 				9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */,
+				AD127BBAFEA15634C14FEDC1 /* EaveDesignSystem.swift in Sources */,
 				407C6EF91C9BDB825EAE7BC4 /* EaveSettings.swift in Sources */,
 				F78E61EBF22C5941A3A4F39C /* HotKeyManager.swift in Sources */,
 				1B0E4CE42F1B41FAA325D606 /* HotKeyRecorderView.swift in Sources */,

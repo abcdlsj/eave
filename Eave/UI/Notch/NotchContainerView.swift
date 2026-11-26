@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Root SwiftUI surface hosted inside NotchPanel, seamlessly fusing with the hardware notch bezel
-/// and morphing smoothly across `idle`, `ambient`, `peek`, and `bar` states.
+/// Root SwiftUI surface hosted inside NotchPanel.
+/// Uses ONE persistent pure-black obsidian shell whose geometry and corner curves continuously morph
+/// with liquid-spring physics across `idle`, `ambient`, `peek`, and `bar` — zero neon rims, pure hardware cohesion.
 struct NotchContainerView: View {
     let stateMachine: NotchStateMachine
     let geometryProvider: () -> NotchGeometry
@@ -18,29 +19,58 @@ struct NotchContainerView: View {
 
     private var geometry: NotchGeometry { geometryProvider() }
 
+    private var metrics: NotchSurfaceMetrics {
+        NotchSurfaceMetrics.resolve(for: stateMachine.state, geometry: geometry)
+    }
+
+    private var stateAnimation: Animation {
+        if case .idle = stateMachine.state {
+            return EaveMotion.notchRetract
+        }
+        return EaveMotion.notchMorph
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            notchBody
-                .animation(.spring(response: 0.28, dampingFraction: 0.86), value: stateMachine.state)
+            ZStack(alignment: .top) {
+                // Single persistent pure-black hardware shell (shadow strictly on static shell for 120fps).
+                notchShell(metrics: metrics)
+                    .frame(width: metrics.width, height: metrics.height)
+
+                // State content clipped cleanly inside the morphing silhouette.
+                stateContent
+                    .frame(width: metrics.width, height: metrics.height, alignment: .top)
+                    .clipShape(shellClipShape(metrics: metrics))
+            }
+            .opacity(metrics.isVisible ? 1 : 0)
+            .allowsHitTesting(metrics.isVisible)
+            .animation(stateAnimation, value: stateMachine.state)
+
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
-    private var notchBody: some View {
+    private var stateContent: some View {
         let baseW = geometry.notchRect.width
         let baseH = geometry.notchRect.height
 
         switch stateMachine.state {
         case .idle:
             Color.clear
-                .frame(width: baseW, height: 1)
 
         case .ambient(let indicators):
-            ambientWings(indicators: indicators, baseW: baseW, baseH: baseH)
-                .background(notchShell(topRadius: 8, bottomRadius: 12))
-                .transition(.opacity)
+            NotchAmbientWingsView(
+                indicators: indicators,
+                notchWidth: baseW,
+                notchHeight: baseH,
+                onTap: { indicator in
+                    EaveHaptics.tick()
+                    onAmbientAction(indicator)
+                }
+            )
+            .transition(.opacity)
 
         case .peek(let alert, let expanded):
             NotchPeekView(
@@ -48,21 +78,16 @@ struct NotchContainerView: View {
                 expanded: expanded,
                 notchWidth: baseW,
                 notchHeight: baseH,
-                onPrimaryAction: { onAlertAction(alert) },
-                onDismiss: { stateMachine.dismissPeek() }
+                onPrimaryAction: {
+                    EaveHaptics.tick()
+                    onAlertAction(alert)
+                },
+                onDismiss: {
+                    EaveHaptics.tick()
+                    stateMachine.dismissPeek()
+                }
             )
-            .frame(
-                width: expanded ? max(baseW + 150, 336) : baseW + 104,
-                alignment: .top
-            )
-            .background(
-                notchShell(
-                    topRadius: expanded ? 12 : 9,
-                    bottomRadius: expanded ? 18 : 13,
-                    shadowRadius: expanded ? 12 : 5,
-                    shadowOpacity: expanded ? 0.30 : 0.14
-                )
-            )
+            .transition(.opacity)
 
         case .bar:
             NotchBarView(
@@ -75,99 +100,128 @@ struct NotchContainerView: View {
                 onRefresh: onRefreshBar,
                 onOpenSearch: onOpenSearch,
                 onOpenSettings: onOpenSettings,
-                onClose: { stateMachine.closeBar() }
+                onClose: {
+                    EaveHaptics.tick()
+                    stateMachine.closeBar()
+                }
             )
-            .frame(width: 520, alignment: .top)
-            .background(
-                // Attach shadow strictly to the static obsidian shell, never to the scrolling NotchBarView,
-                // so horizontal scrolling and icon hover run at native 120fps without offscreen shadow passes.
-                notchShell(topRadius: 14, bottomRadius: 22, shadowRadius: 14, shadowOpacity: 0.34)
-            )
+            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
         }
     }
 
-    private func ambientWings(indicators: [AmbientIndicator], baseW: CGFloat, baseH: CGFloat) -> some View {
-        let primary = indicators.first
-        let resolved = AppIconService.shared.resolve(
-            bundleIdentifier: primary?.bundleIdentifier,
-            fallbackSymbol: primary?.symbolName,
-            fallbackAccentHex: primary?.accentHex
-        )
-
-        return HStack(spacing: 0) {
-            Circle()
-                .fill(resolved.accentColor)
-                .frame(width: 5.5, height: 5.5)
-                .frame(width: 22, height: baseH)
-
-            Spacer(minLength: 0)
-                .frame(width: max(baseW - 8, 124))
-
-            Text(primary?.badge ?? "\(indicators.count)")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(width: 22, height: baseH)
+    private func shellClipShape(metrics: NotchSurfaceMetrics) -> AnyShape {
+        if geometry.isPhysicalNotch {
+            AnyShape(NotchShape(topCornerRadius: metrics.topRadius, bottomCornerRadius: metrics.bottomRadius))
+        } else {
+            AnyShape(RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous))
         }
-        .padding(.horizontal, 6)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if let primary {
-                onAmbientAction(primary)
-            }
-        }
-        .help(indicators.map(\.title).joined(separator: ", "))
     }
 
-    /// Deep obsidian shell whose top edge melts seamlessly into the hardware notch bezel,
-    /// accented only along the lower perimeter by an ultra-subtle fading specular rim.
+    /// Pure optical `#000000` obsidian shell whose top edge disappears seamlessly into the MacBook bezel,
+    /// finished only by a razor-thin neutral titanium rim along the lower perimeter.
     @ViewBuilder
-    private func notchShell(
-        topRadius: CGFloat,
-        bottomRadius: CGFloat,
-        shadowRadius: CGFloat = 0,
-        shadowOpacity: Double = 0
-    ) -> some View {
+    private func notchShell(metrics: NotchSurfaceMetrics) -> some View {
         if geometry.isPhysicalNotch {
             ZStack {
-                NotchShape(topCornerRadius: topRadius, bottomCornerRadius: bottomRadius)
+                NotchShape(topCornerRadius: metrics.topRadius, bottomCornerRadius: metrics.bottomRadius)
                     .fill(Color.black)
                     .shadow(
-                        color: .black.opacity(shadowOpacity),
-                        radius: shadowRadius,
-                        y: shadowRadius > 0 ? 6 : 0
+                        color: .black.opacity(metrics.shadowOpacity),
+                        radius: metrics.shadowRadius,
+                        y: metrics.shadowRadius > 0 ? 6 : 0
                     )
 
-                // Subtle bottom-only glass sheen (zero white line along the top bezel seam).
-                NotchBottomRimShape(topCornerRadius: topRadius, bottomCornerRadius: bottomRadius)
+                NotchBottomRimShape(topCornerRadius: metrics.topRadius, bottomCornerRadius: metrics.bottomRadius)
                     .stroke(
                         LinearGradient(
-                            colors: [.clear, .white.opacity(0.08), .white.opacity(0.16), .white.opacity(0.08), .clear],
+                            colors: [.clear, .white.opacity(0.06), .white.opacity(0.11), .white.opacity(0.06), .clear],
                             startPoint: .leading,
                             endPoint: .trailing
                         ),
-                        lineWidth: 0.65
+                        lineWidth: 0.6
                     )
             }
         } else {
-            RoundedRectangle(cornerRadius: bottomRadius, style: .continuous)
-                .fill(Color(red: 0.05, green: 0.05, blue: 0.06).opacity(0.95))
+            RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous)
+                .fill(Color(red: 0.04, green: 0.04, blue: 0.045).opacity(0.96))
                 .shadow(
-                    color: .black.opacity(shadowOpacity),
-                    radius: shadowRadius,
-                    y: shadowRadius > 0 ? 6 : 0
+                    color: .black.opacity(metrics.shadowOpacity),
+                    radius: metrics.shadowRadius,
+                    y: metrics.shadowRadius > 0 ? 6 : 0
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: bottomRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
-                                colors: [.white.opacity(0.20), .white.opacity(0.07)],
+                                colors: [.white.opacity(0.15), .white.opacity(0.06)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             ),
-                            lineWidth: 0.75
+                            lineWidth: 0.6
                         )
                 )
         }
+    }
+}
+
+// MARK: - Quiet Architectural Ambient Wings
+
+private struct NotchAmbientWingsView: View {
+    let indicators: [AmbientIndicator]
+    let notchWidth: CGFloat
+    let notchHeight: CGFloat
+    let onTap: (AmbientIndicator) -> Void
+
+    @State private var isHovered = false
+    @State private var breathe = false
+
+    private var primary: AmbientIndicator? { indicators.first }
+
+    /// Crisp restrained status color: Apple notification crimson for Dock badges, warm silver for ambient signals.
+    private var dotColor: Color {
+        if primary?.source == .dockBadge {
+            return Color(red: 1.0, green: 0.27, blue: 0.23)
+        }
+        return Color.white.opacity(0.86)
+    }
+
+    var body: some View {
+        Button {
+            if let primary { onTap(primary) }
+        } label: {
+            HStack(spacing: 0) {
+                // Left wing: quiet precision LED dot (no loud neon halo).
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 5, height: 5)
+                    .opacity(breathe ? 1.0 : 0.58)
+                    .frame(width: 24, height: notchHeight)
+
+                Spacer(minLength: 0)
+                    .frame(width: max(notchWidth - 6, 124))
+
+                // Right wing: whisper-clean tabular count.
+                Text(primary?.badge ?? "\(indicators.count)")
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .foregroundStyle(.white.opacity(isHovered ? 0.96 : 0.72))
+                    .frame(width: 24, height: notchHeight)
+            }
+            .padding(.horizontal, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.97, pressedOpacity: 0.90))
+        .onHover { hovering in
+            withAnimation(EaveMotion.hover) {
+                isHovered = hovering
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                breathe = true
+            }
+        }
+        .help(indicators.map(\.title).joined(separator: ", "))
     }
 }

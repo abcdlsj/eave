@@ -84,6 +84,50 @@ enum MenuBarSearchEngine {
         }
         return max(score, 10)
     }
+
+    /// Returns 0-based character offsets in `text` that match `query` (exact substring first, then subsequence),
+    /// enabling crisp Raycast-style match highlighting in the search palette.
+    static func matchedIndices(in text: String, query: String) -> Set<Int> {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return [] }
+
+        let chars = Array(text.lowercased())
+        let needleChars = Array(needle)
+        guard !chars.isEmpty, needleChars.count <= chars.count else { return [] }
+
+        // Prefer contiguous substring match so highlights stay visually tight.
+        if let start = contiguousRangeStart(in: chars, needle: needleChars) {
+            return Set(start..<(start + needleChars.count))
+        }
+
+        // Fall back to subsequence match offsets.
+        var result = Set<Int>()
+        var searchFrom = 0
+        for target in needleChars {
+            guard let found = chars[searchFrom...].firstIndex(of: target) else {
+                return []
+            }
+            result.insert(found)
+            searchFrom = found + 1
+        }
+        return result
+    }
+
+    private static func contiguousRangeStart(in haystack: [Character], needle: [Character]) -> Int? {
+        guard !needle.isEmpty, needle.count <= haystack.count else { return nil }
+        let limit = haystack.count - needle.count
+        for start in 0...limit {
+            var matched = true
+            for offset in 0..<needle.count {
+                if haystack[start + offset] != needle[offset] {
+                    matched = false
+                    break
+                }
+            }
+            if matched { return start }
+        }
+        return nil
+    }
 }
 
 /// Dual-track menu bar scanner:

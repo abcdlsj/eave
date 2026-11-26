@@ -274,7 +274,10 @@ final class MenuBarManager: NSObject {
             always.button?.isHidden = !isAlwaysHiddenExpanded
         }
 
-        toggleItem.button?.alphaValue = isHiddenExpanded ? 1.0 : 0.85
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            toggleItem.button?.animator().alphaValue = isHiddenExpanded ? 1.0 : 0.85
+        }
     }
 
     // MARK: - Actions & Context Menu
@@ -309,41 +312,34 @@ final class MenuBarManager: NSObject {
     private func presentContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
 
+        func makeItem(title: String, symbol: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+            item.target = self
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            return item
+        }
+
         let toggleTitle = isHiddenExpanded ? "Hide Menu Bar Items" : "Show Hidden Items"
-        let toggleMenuItem = NSMenuItem(title: toggleTitle, action: #selector(menuToggleHidden), keyEquivalent: "")
-        toggleMenuItem.target = self
-        menu.addItem(toggleMenuItem)
+        let toggleSymbol = isHiddenExpanded ? "eye.slash" : "eye"
+        menu.addItem(makeItem(title: toggleTitle, symbol: toggleSymbol, action: #selector(menuToggleHidden)))
 
         if settings.enableAlwaysHiddenSection {
             let alwaysTitle = isAlwaysHiddenExpanded ? "Hide Always-Hidden Items" : "Show Always-Hidden Items"
-            let alwaysMenuItem = NSMenuItem(title: alwaysTitle, action: #selector(menuToggleAlwaysHidden), keyEquivalent: "")
-            alwaysMenuItem.target = self
-            menu.addItem(alwaysMenuItem)
+            let alwaysSymbol = isAlwaysHiddenExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
+            menu.addItem(makeItem(title: alwaysTitle, symbol: alwaysSymbol, action: #selector(menuToggleAlwaysHidden)))
         }
 
-        let notchBarItem = NSMenuItem(title: "Toggle Notch Bar", action: #selector(menuToggleNotchBar), keyEquivalent: "")
-        notchBarItem.target = self
-        menu.addItem(notchBarItem)
-
-        let searchItem = NSMenuItem(title: "Search Menu Bar...", action: #selector(menuOpenSearch), keyEquivalent: "")
-        searchItem.target = self
-        menu.addItem(searchItem)
+        menu.addItem(makeItem(title: "Toggle Notch Bar", symbol: "macbook", action: #selector(menuToggleNotchBar)))
+        menu.addItem(makeItem(title: "Search Menu Bar...", symbol: "magnifyingglass", action: #selector(menuOpenSearch)))
 
         menu.addItem(.separator())
 
-        let testPeekItem = NSMenuItem(title: "Send Test Notch Peek", action: #selector(menuTestPeek), keyEquivalent: "")
-        testPeekItem.target = self
-        menu.addItem(testPeekItem)
-
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(menuOpenSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
+        menu.addItem(makeItem(title: "Preview Notch Peek", symbol: "bell.badge", action: #selector(menuTestPeek)))
+        menu.addItem(makeItem(title: "Settings...", symbol: "gearshape", action: #selector(menuOpenSettings), keyEquivalent: ","))
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Eave", action: #selector(menuQuit), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
+        menu.addItem(makeItem(title: "Quit Eave", symbol: "power", action: #selector(menuQuit), keyEquivalent: "q"))
 
         toggleItem.menu = menu
         button.performClick(nil)

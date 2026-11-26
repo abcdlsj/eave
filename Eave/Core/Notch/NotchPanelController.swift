@@ -30,8 +30,8 @@ final class NotchPanel: NSPanel {
 /// Manages the lifecycle, screen geometry, hit-test pass-through, and SwiftUI hosting of the Notch panel.
 @MainActor
 final class NotchPanelController {
-    private static let canvasWidth: CGFloat = 600
-    private static let canvasHeight: CGFloat = 240
+    private static let canvasWidth: CGFloat = 620
+    private static let canvasHeight: CGFloat = 250
 
     private let stateMachine: NotchStateMachine
     private let panel: NotchPanel
@@ -129,35 +129,28 @@ final class NotchPanelController {
         )
     }
 
-    /// Approximate screen-space bounding box of the currently visible Notch surface.
+    /// Exact screen-space bounding box derived from shared `NotchSurfaceMetrics`,
+    /// with a small hover hysteresis cushion on expanded states to eliminate edge flicker.
     private func activeHitRect() -> CGRect {
+        let metrics = NotchSurfaceMetrics.resolve(for: stateMachine.state, geometry: geometry)
+        guard metrics.isVisible else { return .zero }
+
         let topY = geometry.isPhysicalNotch ? geometry.screenFrame.maxY : geometry.notchRect.maxY
         let centerX = geometry.notchRect.midX
-        let baseW = geometry.notchRect.width
-        let baseH = geometry.notchRect.height
 
+        let extraPadding: CGFloat
         switch stateMachine.state {
-        case .idle:
-            return .zero
-        case .ambient:
-            let w = baseW + 58
-            let h = baseH + 2
-            return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
-        case .peek(_, let expanded):
-            if expanded {
-                let w: CGFloat = max(baseW + 150, 336)
-                let h: CGFloat = baseH + 64
-                return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
-            } else {
-                let w: CGFloat = baseW + 104
-                let h: CGFloat = baseH + 4
-                return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
-            }
+        case .peek(_, let expanded) where expanded:
+            extraPadding = 6
         case .bar:
-            let w: CGFloat = 520
-            let h: CGFloat = baseH + 116
-            return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
+            extraPadding = 4
+        default:
+            extraPadding = 2
         }
+
+        let w = metrics.width + extraPadding * 2
+        let h = metrics.height + extraPadding
+        return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)
     }
 
     private func observeDisplayAndSpaceChanges() {

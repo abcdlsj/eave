@@ -67,11 +67,11 @@ final class SignalHub {
     func sendTestPeek() {
         let alert = NotchAlert(
             source: .system,
-            title: "Eave Notch Peek",
+            title: "Eave",
             subtitle: "Hidden app notifications appear right here",
             badge: "3",
-            symbolName: "bell.badge.fill",
-            accentHex: "#38BDF8",
+            symbolName: "bell.fill",
+            accentHex: nil,
             duration: settings.peekDurationSeconds
         )
         stateMachine.presentPeek(alert)

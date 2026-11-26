@@ -2,7 +2,8 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// Key-capable floating search panel (Raycast / Spotlight style) for instant keyboard access to any menu bar item.
+/// Key-capable floating search panel (Raycast / Spotlight monochrome studio style)
+/// for instant keyboard access to any menu bar item.
 final class MenuBarSearchWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -23,26 +24,63 @@ final class MenuBarSearchWindow: NSPanel {
     }
 }
 
+enum SearchSectionFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case hidden = "Hidden"
+    case visible = "Visible"
+
+    var id: String { rawValue }
+
+    var next: SearchSectionFilter {
+        switch self {
+        case .all: .hidden
+        case .hidden: .visible
+        case .visible: .all
+        }
+    }
+
+    func matches(_ section: MenuBarSection) -> Bool {
+        switch self {
+        case .all: true
+        case .hidden: section != .visible
+        case .visible: section == .visible
+        }
+    }
+}
+
 @MainActor
 @Observable
-final class MenuBarSearchController {
+final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private var panel: MenuBarSearchWindow?
     private var keyMonitor: Any?
+    private var closeTask: Task<Void, Never>?
 
     var query: String = "" {
+        didSet { selectedIndex = 0 }
+    }
+    var sectionFilter: SearchSectionFilter = .all {
         didSet { selectedIndex = 0 }
     }
     var allItems: [CapturedMenuBarItem] = []
     var selectedIndex: Int = 0
     private(set) var isVisible: Bool = false
+    private(set) var isPresented: Bool = false
+    private(set) var isRefreshing: Bool = false
 
     var onSelectItem: ((MenuBarItemInfo) -> Void)?
     var onRequestRefreshItems: (() async -> [CapturedMenuBarItem])?
 
     var filteredItems: [CapturedMenuBarItem] {
-        let infoMap = Dictionary(uniqueKeysWithValues: allItems.map { ($0.info.id, $0) })
-        let rankedInfos = MenuBarSearchEngine.filter(items: allItems.map(\.info), query: query)
+        let scoped = allItems.filter { sectionFilter.matches($0.info.section) }
+        let infoMap = Dictionary(uniqueKeysWithValues: scoped.map { ($0.info.id, $0) })
+        let rankedInfos = MenuBarSearchEngine.filter(items: scoped.map(\.info), query: query)
         return rankedInfos.compactMap { infoMap[$0.id] }
+    }
+
+    func count(for filter: SearchSectionFilter) -> Int {
+        allItems.reduce(into: 0) { count, item in
+            if filter.matches(item.info.section) { count += 1 }
+        }
     }
 
     func toggle() {
@@ -54,13 +92,19 @@ final class MenuBarSearchController {
     }
 
     func open() {
+        closeTask?.cancel()
+        closeTask = nil
+
         query = ""
+        sectionFilter = .all
         selectedIndex = 0
         isVisible = true
+        isPresented = false
 
         if panel == nil {
-            let rect = NSRect(x: 0, y: 0, width: 520, height: 380)
+            let rect = NSRect(x: 0, y: 0, width: 556, height: 416)
             let window = MenuBarSearchWindow(contentRect: rect)
+            window.delegate = self
             let view = MenuBarSearchView(controller: self)
             window.contentView = NSHostingView(rootView: view)
             panel = window
@@ -68,15 +112,25 @@ final class MenuBarSearchController {
 
         if let panel, let screen = NotchGeometryResolver.preferredScreen() ?? NSScreen.main {
             let x = screen.frame.midX - panel.frame.width / 2
-            let y = screen.frame.maxY - panel.frame.height - 150
+            let y = screen.frame.maxY - panel.frame.height - 135
             panel.setFrameOrigin(NSPoint(x: x, y: y))
             panel.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
 
         installKeyMonitor()
+        EaveHaptics.tick()
 
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible else { return }
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                self.isPresented = true
+            }
+        }
+
+        isRefreshing = true
         Task {
+            defer { isRefreshing = false }
             if let items = await onRequestRefreshItems?() {
                 allItems = items
             }
@@ -84,25 +138,44 @@ final class MenuBarSearchController {
     }
 
     func close() {
+        guard isVisible else { return }
         isVisible = false
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
         }
-        panel?.orderOut(nil)
+
+        withAnimation(.easeOut(duration: 0.12)) {
+            isPresented = false
+        }
+
+        closeTask?.cancel()
+        closeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 130_000_000)
+            guard !Task.isCancelled, let self, !self.isVisible else { return }
+            self.panel?.orderOut(nil)
+        }
     }
 
     func selectCurrent() {
         let items = filteredItems
         guard items.indices.contains(selectedIndex) else { return }
         let chosen = items[selectedIndex].info
+        EaveHaptics.tick()
         close()
         onSelectItem?(chosen)
     }
 
     func select(_ info: MenuBarItemInfo) {
+        EaveHaptics.tick()
         close()
         onSelectItem?(info)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        if isVisible {
+            close()
+        }
     }
 
     private func installKeyMonitor() {
@@ -113,13 +186,27 @@ final class MenuBarSearchController {
             case 53: // Escape
                 self.close()
                 return nil
+            case 48: // Tab cycles section filter
+                EaveHaptics.tick()
+                withAnimation(EaveMotion.microSpring) {
+                    self.sectionFilter = self.sectionFilter.next
+                }
+                return nil
             case 125: // Down arrow
                 let count = self.filteredItems.count
-                if count > 0 { self.selectedIndex = (self.selectedIndex + 1) % count }
+                if count > 0 {
+                    withAnimation(EaveMotion.microSpring) {
+                        self.selectedIndex = (self.selectedIndex + 1) % count
+                    }
+                }
                 return nil
             case 126: // Up arrow
                 let count = self.filteredItems.count
-                if count > 0 { self.selectedIndex = (self.selectedIndex - 1 + count) % count }
+                if count > 0 {
+                    withAnimation(EaveMotion.microSpring) {
+                        self.selectedIndex = (self.selectedIndex - 1 + count) % count
+                    }
+                }
                 return nil
             case 36: // Return
                 self.selectCurrent()
@@ -134,87 +221,124 @@ final class MenuBarSearchController {
 struct MenuBarSearchView: View {
     @Bindable var controller: MenuBarSearchController
     @FocusState private var isFieldFocused: Bool
+    @Namespace private var filterNamespace
+    @Namespace private var selectionNamespace
 
     var body: some View {
         VStack(spacing: 0) {
             // Search input header
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(controller.query.isEmpty ? .secondary : .primary)
 
                 TextField("Search menu bar items...", text: $controller.query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16.5, weight: .regular))
+                    .font(.system(size: 16, weight: .regular))
                     .focused($isFieldFocused)
                     .onSubmit {
                         controller.selectCurrent()
                     }
 
+                if controller.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.70)
+                        .transition(.opacity)
+                }
+
                 if !controller.query.isEmpty {
                     Button {
-                        controller.query = ""
+                        EaveHaptics.tick()
+                        withAnimation(EaveMotion.hover) {
+                            controller.query = ""
+                        }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.secondary.opacity(0.75))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.86))
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 15)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
 
-            Divider()
-                .opacity(0.6)
+            // Understated monochrome section filter pills
+            HStack(spacing: 5) {
+                ForEach(SearchSectionFilter.allCases) { filter in
+                    filterPill(filter)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.075))
+                .frame(height: 0.6)
 
             // Results list
             let items = controller.filteredItems
             if items.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "rectangle.topthird.inset.filled")
-                        .font(.system(size: 24))
+                    Image(systemName: controller.query.isEmpty ? "rectangle.topthird.inset.filled" : "magnifyingglass")
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(.tertiary)
-                    Text("No matching menu bar items")
-                        .font(.system(size: 13.5, weight: .medium))
+                    Text(controller.query.isEmpty ? "No menu bar items discovered" : "No matches for \"\(controller.query)\"")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
-                    Text("Grant Accessibility permission in Settings for complete item discovery.")
+                    Text("Grant Accessibility permission in Settings for complete discovery.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(.tertiary)
                 }
+                .padding(.horizontal, 36)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 3) {
+                        LazyVStack(spacing: 2) {
                             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                 SearchItemRow(
                                     item: item,
-                                    isSelected: index == controller.selectedIndex
+                                    query: controller.query,
+                                    isSelected: index == controller.selectedIndex,
+                                    selectionNamespace: selectionNamespace,
+                                    onHoverSelect: {
+                                        if controller.selectedIndex != index {
+                                            withAnimation(EaveMotion.microSpring) {
+                                                controller.selectedIndex = index
+                                            }
+                                        }
+                                    },
+                                    onTap: {
+                                        controller.select(item.info)
+                                    }
                                 )
                                 .id(index)
-                                .onTapGesture {
-                                    controller.select(item.info)
-                                }
                             }
                         }
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                     }
                     .onChange(of: controller.selectedIndex) { _, newValue in
-                        withAnimation(.easeOut(duration: 0.12)) {
+                        withAnimation(.easeOut(duration: 0.13)) {
                             proxy.scrollTo(newValue, anchor: .center)
                         }
                     }
                 }
             }
 
-            Divider()
-                .opacity(0.6)
+            Rectangle()
+                .fill(Color.primary.opacity(0.075))
+                .frame(height: 0.6)
 
-            // Footer with tactile keycaps
+            // Minimalist keycap footer
             HStack(spacing: 12) {
                 keyHint("↑↓", label: "Navigate")
+                keyHint("⇥", label: "Filter")
                 keyHint("↩", label: "Open")
                 keyHint("⎋", label: "Close")
                 Spacer()
@@ -222,25 +346,60 @@ struct MenuBarSearchView: View {
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()
+                    .contentTransition(.numericText())
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
         }
-        .frame(width: 520, height: 380)
-        .eaveGlassSurface(cornerRadius: 20)
+        .frame(width: 536, height: 396)
+        .eaveGlassSurface(cornerRadius: 18)
+        .scaleEffect(controller.isPresented ? 1.0 : 0.965)
+        .offset(y: controller.isPresented ? 0 : -6)
+        .opacity(controller.isPresented ? 1.0 : 0.0)
+        .frame(width: 556, height: 416)
         .onAppear {
             isFieldFocused = true
         }
+        .onChange(of: controller.isVisible) { _, visible in
+            if visible { isFieldFocused = true }
+        }
+    }
+
+    private func filterPill(_ filter: SearchSectionFilter) -> some View {
+        let isActive = controller.sectionFilter == filter
+        let count = controller.count(for: filter)
+
+        return Button {
+            EaveHaptics.tick()
+            withAnimation(EaveMotion.microSpring) {
+                controller.sectionFilter = filter
+            }
+        } label: {
+            HStack(spacing: 4.5) {
+                Text(filter.rawValue)
+                    .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                Text("\(count)")
+                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary.opacity(isActive ? 0.9 : 0.6))
+            }
+            .foregroundStyle(isActive ? .primary : .secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background {
+                if isActive {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.095))
+                        .matchedGeometryEffect(id: "activeFilterPill", in: filterNamespace)
+                }
+            }
+        }
+        .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.95))
     }
 
     private func keyHint(_ key: String, label: String) -> some View {
-        HStack(spacing: 4) {
-            Text(key)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        HStack(spacing: 4.5) {
+            EaveKeycap(label: key, fontSize: 9.5, horizontalPadding: 4.5, verticalPadding: 1.5)
             Text(label)
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
@@ -250,58 +409,90 @@ struct MenuBarSearchView: View {
 
 private struct SearchItemRow: View {
     let item: CapturedMenuBarItem
+    let query: String
     let isSelected: Bool
+    let selectionNamespace: Namespace.ID
+    let onHoverSelect: () -> Void
+    let onTap: () -> Void
 
     private var resolved: AppIconService.ResolvedIcon {
         AppIconService.shared.resolve(for: item.info)
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            rowIcon
-                .frame(width: 28, height: 28)
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                rowIcon
+                    .frame(width: 28, height: 28)
 
-            VStack(alignment: .leading, spacing: 1.5) {
-                Text(item.info.appName)
-                    .font(.system(size: 13.5, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                if !item.info.title.isEmpty && item.info.title != item.info.appName {
-                    Text(item.info.title)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1.5) {
+                    highlightedText(item.info.appName, query: query)
                         .lineLimit(1)
+
+                    if !item.info.title.isEmpty && item.info.title != item.info.appName {
+                        Text(item.info.title)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                Text(item.info.section.displayName)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(item.info.section == .visible ? .tertiary : .secondary)
+                    .padding(.horizontal, 7.5)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        Capsule()
+                            .fill(item.info.section == .visible ? Color.clear : Color.primary.opacity(0.06))
+                    )
+
+                if isSelected {
+                    EaveKeycap(label: "↩", fontSize: 9.5, horizontalPadding: 4.5, verticalPadding: 1.5)
+                        .transition(.opacity)
                 }
             }
-
-            Spacer()
-
-            Text(item.info.section.displayName)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(item.info.section == .visible ? .secondary : resolved.accentColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule()
-                        .fill(
-                            item.info.section == .visible
-                                ? Color.primary.opacity(0.06)
-                                : resolved.accentColor.opacity(0.14)
-                        )
-                )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.primary.opacity(0.085))
+                        .matchedGeometryEffect(id: "searchRowSelection", in: selectionNamespace)
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(isSelected ? Color.accentColor.opacity(0.32) : Color.clear, lineWidth: 0.75)
-                )
-        )
-        .contentShape(Rectangle())
+        .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.99, pressedOpacity: 0.90))
+        .onHover { hovering in
+            if hovering {
+                onHoverSelect()
+            }
+        }
+    }
+
+    private func highlightedText(_ text: String, query: String) -> Text {
+        let indices = MenuBarSearchEngine.matchedIndices(in: text, query: query)
+        guard !indices.isEmpty else {
+            return Text(text)
+                .font(.system(size: 13.5, weight: isSelected ? .medium : .regular))
+                .foregroundStyle(.primary)
+        }
+        var attributed = AttributedString()
+        for (idx, ch) in text.enumerated() {
+            var segment = AttributedString(String(ch))
+            if indices.contains(idx) {
+                segment.foregroundColor = .primary
+                segment.font = .system(size: 13.5, weight: .semibold)
+            } else {
+                segment.foregroundColor = .secondary
+                segment.font = .system(size: 13.5, weight: .regular)
+            }
+            attributed.append(segment)
+        }
+        return Text(attributed)
     }
 
     @ViewBuilder
@@ -312,14 +503,13 @@ private struct SearchItemRow: View {
                 .interpolation(.high)
                 .antialiased(true)
                 .aspectRatio(contentMode: .fit)
-                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(resolved.accentColor.opacity(0.16))
+                    .fill(Color.primary.opacity(0.065))
                 Image(systemName: resolved.symbolName ?? "menubar.rectangle")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(resolved.accentColor)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.8))
             }
         }
     }
