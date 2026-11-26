@@ -21,6 +21,7 @@ DerivedData/
 
 # Local machine-specific notes and tooling (never tracked)
 .local/
+docs/RELEASE.md
 
 
 # Release artifacts
