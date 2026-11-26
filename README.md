@@ -1,18 +1,75 @@
 # Eave
 
-A native macOS menu bar manager with Notch integration, built with pure Swift (`AppKit` + `SwiftUI`) and zero third-party dependencies.
+A restrained, native macOS menu bar manager with textless Notch signals — built with pure Swift (`AppKit` + `SwiftUI`), zero third-party dependencies, and zero Screen Recording permission.
 
 - **Minimum macOS**: macOS 15.0 (Sequoia), tuned for macOS 26 (Tahoe) with Liquid Glass support.
-- **Design Document**: See [docs/DESIGN.md](docs/DESIGN.md) (Chinese).
+- **Architecture & Design**: See [docs/DESIGN.md](docs/DESIGN.md).
+
+<p align="center">
+  <img src="docs/assets/notch-showcase.png" alt="Eave NotchBridge Signals" width="680" />
+</p>
 
 ## Features
 
-- **Three-Section Menu Bar Management**: Organize menu bar items into *Visible*, *Hidden*, and *Always-Hidden* sections using lightweight separator status items. Supports click toggle, `Option+Click`, scroll-wheel gestures, hover expand, global shortcuts, and auto-rehide.
-- **Notch Peek for Hidden Apps**: Monitors Dock notification badges (`AXStatusLabel`) and menu bar attribute changes for hidden or watched apps, smoothly peeking from the MacBook notch with click-to-open actions.
-- **Notch Bar**: Expands downward directly from the physical notch (or a top floating pill on non-notched displays) to reveal hidden menu bar items with on-demand icon capture and click forwarding.
+- **Two-Section Menu Bar Hiding**: Organize menu bar items into *Visible* and *Hidden* sections (`⌘`-drag icons left of the dot divider). Click the Eave icon or press `⌥⌘H` to expand inline, with unified auto-rehide on inactivity or app switch.
+- **Floating Second-Row Bar**: Hover over the Eave icon on any display to reveal hidden items in a clean floating second row (horizontal scroll or multi-row wrap) without expanding the top menu bar.
+  - **Smart Click Routing**: Left-clicking regular windowed apps brings them directly to the front with zero menu bar flicker; menu-bar-only utilities (such as Tailscale or Clash) support both left-click and right-click forwarding.
+- **Textless Notch Signals**: Single-line hardware-height wings flanking the MacBook notch — no intrusive text cards. Displays the app or sender icon on the left wing and a custom-colored accent dot, subtle 3-bar activity wave, or optional numeric badge on the right, with one-click deep-link or app activation.
 - **Quick Menu Bar Search**: Press `⌥⌘K` to fuzzy-search and trigger any visible or hidden menu bar item from the keyboard.
-- **NotchBridge (Local Automation API)**: Send custom peeks or ambient indicators to the notch from any shell script, CLI, or your own apps via URL Scheme (`eave://notify?...`) or `DistributedNotificationCenter`.
-- **Menu Bar Spacing Control**: Adjust system `NSStatusItemSpacing` and selection padding with one-click reset.
+- **NotchBridge (Local Automation API)**: Push lightweight visual signals to the notch from shell scripts, AI agent hooks, CLIs, or your own apps via `eave://notify?...` or `DistributedNotificationCenter`.
+- **Appearance & Menu Bar Density**: Live System / Light / Dark appearance sync across Settings and floating panels, plus optional `NSStatusItemSpacing` tuning.
+
+<p align="center">
+  <img src="docs/assets/settings.png" alt="Eave Settings" width="680" />
+</p>
+
+## NotchBridge
+
+Notch signals are intentionally textless and quiet — meant to be used sparingly for high-signal events like long builds, background AI agents, or custom app notifications.
+
+### 1. Background Task → Done (Smooth State Transition)
+
+```bash
+# 1) Active background job (3-bar wave, blue accent, auto-expires after 60s if not cleared)
+open -g "eave://notify?id=build&mode=ambient&style=wave&symbol=sparkles&accent=%2338BDF8&duration=60"
+
+# 2) Finished — replaces the same id with a green rim shimmer + sonar ping (loops while visible)
+#    Clicking the notch opens the callback URL or app
+open -g "eave://notify?id=build&symbol=checkmark.circle.fill&accent=%2334C759&duration=8&loop=true&url=https://github.com"
+```
+
+### 2. Custom Local Icon + Optional Numeric Badge + Deep Link
+
+```bash
+# Use any local PNG/ICNS icon, custom accent color, optional numeric count, and click callback
+open -g "eave://notify?id=inbox&icon=/path/to/icon.png&badge=3&accent=%23FF453A&url=myapp://inbox"
+
+# Clear an ambient signal explicitly
+open -g "eave://clear?id=inbox"
+```
+
+### 3. CLI Helper (`scripts/eave-notify`)
+
+```bash
+./scripts/eave-notify --id agent --mode ambient --style wave --symbol sparkles --accent "#38BDF8" --duration 60
+./scripts/eave-notify --id agent --symbol checkmark.circle.fill --accent "#34C759" --duration 8 --loop --bundle-id com.mitchellh.ghostty
+```
+
+**Supported parameters**:
+
+| Parameter | Description |
+| :--- | :--- |
+| `id` | Deduplication key; sending a `peek` with the same `id` clears its matching `ambient` signal. |
+| `mode` | `peek` (transient, default), `ambient` (persistent until cleared or `duration` expires), or `clear`. |
+| `icon` | Local image file path (`.png`, `.icns`, etc.) — highest icon priority. |
+| `symbol` | Any macOS SF Symbol name (used when `icon` is omitted). |
+| `bundleID` | App bundle ID (icon fallback + click-to-activate fallback). |
+| `accent` | Hex highlight color (`#RRGGBB`, URL-encoded as `%23RRGGBB`) for the dot, wave, rim sweep, or badge. |
+| `badge` | Optional strictly numeric count (e.g. `3`, `99+`). Omit for a clean dot-only signal. |
+| `style` | `dot` (default quiet dot / sonar ping) or `wave` (minimal 3-bar breathing activity indicator). |
+| `loop` | `true` / `false` (default `false`). When `true`, gently repeats the rim shimmer and sonar ping every ~2.2s while visible. |
+| `url` | Callback URL / deep link opened when clicking the notch wings. |
+| `duration` | Visibility duration in seconds (`1`–`300`). Defaults to user Peek duration for `peek`, or persistent until `clear` for `ambient`. |
 
 ## Install
 
@@ -28,8 +85,9 @@ Or download the dmg from [Releases](https://github.com/abcdlsj/eave/releases). R
 ad-hoc signed and not notarised: a browser download is blocked by Gatekeeper on first launch
 (right-click → Open), while a Homebrew install carries no quarantine attribute and just runs.
 
-On first launch grant Accessibility access in System Settings → Privacy & Security →
-Accessibility; without it Eave cannot move or click other apps' menu bar items.
+Basic two-section menu bar hiding requires **zero permissions**. Grant **Accessibility** in System
+Settings → Privacy & Security → Accessibility to unlock hidden-app discovery, Dock badge alerts,
+and menu-bar click forwarding. Eave never requests Screen Recording permission.
 
 ## Build & Run
 
@@ -61,15 +119,3 @@ scripts/write-cask.sh 0.2.0 dist/eave_0.2.0_darwin_universal.dmg  # dist/eave.rb
 ```
 
 Set `EAVE_SIGN_IDENTITY` to sign with a Developer ID instead of ad-hoc.
-
-## NotchBridge CLI Example
-
-```bash
-./scripts/eave-notify --title "Build Complete" --subtitle "eave 0.1.0" --badge "OK" --symbol "checkmark.circle.fill"
-```
-
-Or via URL scheme directly:
-
-```bash
-open "eave://notify?title=Deployment+Done&subtitle=production&badge=1&symbol=sparkles&duration=5"
-```
