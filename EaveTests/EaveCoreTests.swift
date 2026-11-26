@@ -71,18 +71,6 @@ final class EaveCoreTests: XCTestCase {
         sm.dismissPeek()
         XCTAssertEqual(sm.state, .ambient([indicator]))
 
-        // Opening bar queues alerts arriving while bar is active.
-        sm.openBar()
-        XCTAssertEqual(sm.state, .bar)
-
-        let queuedAlert = NotchAlert(source: .bridge, title: "Build Done", badge: "OK")
-        sm.presentPeek(queuedAlert)
-        XCTAssertEqual(sm.state, .bar)
-
-        sm.closeBar()
-        XCTAssertEqual(sm.state, .peek(queuedAlert, expanded: false))
-
-        sm.dismissPeek()
         sm.removeAmbient(id: indicator.id)
         XCTAssertEqual(sm.state, .idle)
     }
@@ -165,15 +153,15 @@ final class EaveCoreTests: XCTestCase {
 
     func testSectionClassificationAndFuzzySearch() {
         XCTAssertEqual(
-            MenuBarSearchEngine.classifySection(itemMidX: 500, hiddenSeparatorX: 1100, alwaysHiddenSeparatorX: 800),
-            .alwaysHidden
-        )
-        XCTAssertEqual(
-            MenuBarSearchEngine.classifySection(itemMidX: 950, hiddenSeparatorX: 1100, alwaysHiddenSeparatorX: 800),
+            MenuBarSearchEngine.classifySection(itemMidX: 500, hiddenSeparatorX: 1100),
             .hidden
         )
         XCTAssertEqual(
-            MenuBarSearchEngine.classifySection(itemMidX: 1200, hiddenSeparatorX: 1100, alwaysHiddenSeparatorX: 800),
+            MenuBarSearchEngine.classifySection(itemMidX: 950, hiddenSeparatorX: 1100),
+            .hidden
+        )
+        XCTAssertEqual(
+            MenuBarSearchEngine.classifySection(itemMidX: 1200, hiddenSeparatorX: 1100),
             .visible
         )
 
@@ -212,14 +200,51 @@ final class EaveCoreTests: XCTestCase {
         let alert = NotchAlert(source: .bridge, title: "Done", badge: "OK")
         let compactPeek = NotchSurfaceMetrics.resolve(for: .peek(alert, expanded: false), geometry: geom)
         let expandedPeek = NotchSurfaceMetrics.resolve(for: .peek(alert, expanded: true), geometry: geom)
-        let bar = NotchSurfaceMetrics.resolve(for: .bar, geometry: geom)
 
         XCTAssertTrue(compactPeek.isVisible)
         XCTAssertGreaterThan(compactPeek.width, idle.width)
         XCTAssertGreaterThan(expandedPeek.width, compactPeek.width)
         XCTAssertGreaterThan(expandedPeek.height, compactPeek.height)
-        XCTAssertGreaterThan(bar.width, expandedPeek.width)
-        XCTAssertGreaterThan(bar.height, expandedPeek.height)
+    }
+
+    func testClickForwardingStrategyRouting() {
+        // Regular windowed app + left click -> direct app activation (never expands menu bar).
+        XCTAssertEqual(
+            MenuBarClickForwarder.resolveStrategy(
+                activationPolicy: .regular,
+                button: .left,
+                preferAppActivationForRegularApps: true
+            ),
+            .activateApp
+        )
+
+        // Regular windowed app + right click -> forward right click to menu bar status item.
+        XCTAssertEqual(
+            MenuBarClickForwarder.resolveStrategy(
+                activationPolicy: .regular,
+                button: .right,
+                preferAppActivationForRegularApps: true
+            ),
+            .forwardMenuBarItem(button: .right)
+        )
+
+        // Menu-bar-only utility (accessory, e.g. Tailscale/Clash) -> forward left or right click.
+        XCTAssertEqual(
+            MenuBarClickForwarder.resolveStrategy(
+                activationPolicy: .accessory,
+                button: .left,
+                preferAppActivationForRegularApps: true
+            ),
+            .forwardMenuBarItem(button: .left)
+        )
+        XCTAssertEqual(
+            MenuBarClickForwarder.resolveStrategy(
+                activationPolicy: .accessory,
+                button: .right,
+                preferAppActivationForRegularApps: true
+            ),
+            .forwardMenuBarItem(button: .right)
+        )
     }
 
     @MainActor
@@ -292,7 +317,6 @@ final class EaveCoreTests: XCTestCase {
             runningApps: apps,
             menuBarHeight: 33,
             hiddenSeparatorX: 1049,
-            alwaysHiddenSeparatorX: nil,
             excludingWindowIDs: [],
             ownPID: 999,
             ownBundleID: "com.abcdlsj.eave"
@@ -316,32 +340,42 @@ final class EaveCoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let s1 = EaveSettings(defaults: defaults)
+        XCTAssertTrue(s1.rehideAutomatically)
         XCTAssertTrue(s1.expandOnEaveHover)
         XCTAssertEqual(s1.hoverDisplayMode, .inline)
         XCTAssertEqual(s1.secondRowLayoutMode, .horizontalScroll)
         XCTAssertEqual(s1.secondRowItemsPerRow, EaveSettings.defaultSecondRowItemsPerRow)
         XCTAssertEqual(s1.appearanceMode, .system)
+        XCTAssertTrue(s1.enableNotchPeek)
+        XCTAssertEqual(s1.peekDurationSeconds, 4.5)
 
-        s1.rehideDelaySeconds = 12
+        s1.rehideAutomatically = false
         s1.expandOnEaveHover = false
+        s1.hoverDelaySeconds = 0.35
         s1.hoverDisplayMode = .secondRow
         s1.secondRowLayoutMode = .multiRow
         s1.secondRowItemsPerRow = 6
         s1.appearanceMode = .dark
+        s1.peekDurationSeconds = 6.0
         s1.addWatchedBundleID("com.example.one")
         s1.addWatchedBundleID("com.example.one")
         s1.addWatchedBundleID("  com.example.two  ")
 
         let s2 = EaveSettings(defaults: defaults)
-        XCTAssertEqual(s2.rehideDelaySeconds, 12)
+        XCTAssertFalse(s2.rehideAutomatically)
         XCTAssertFalse(s2.expandOnEaveHover)
+        XCTAssertEqual(s2.hoverDelaySeconds, 0.35, accuracy: 0.001)
         XCTAssertEqual(s2.hoverDisplayMode, .secondRow)
         XCTAssertEqual(s2.secondRowLayoutMode, .multiRow)
         XCTAssertEqual(s2.secondRowItemsPerRow, 6)
         XCTAssertEqual(s2.appearanceMode, .dark)
+        XCTAssertEqual(s2.peekDurationSeconds, 6.0, accuracy: 0.001)
         XCTAssertNil(AppAppearanceMode.system.nsAppearance)
         XCTAssertNotNil(AppAppearanceMode.light.nsAppearance)
         XCTAssertNotNil(AppAppearanceMode.dark.nsAppearance)
+        XCTAssertNil(AppAppearanceMode.system.colorScheme)
+        XCTAssertEqual(AppAppearanceMode.light.colorScheme, .light)
+        XCTAssertEqual(AppAppearanceMode.dark.colorScheme, .dark)
         XCTAssertEqual(s2.watchedBundleIDs, ["com.example.one", "com.example.two"])
 
         // Clamping invariants for items per row

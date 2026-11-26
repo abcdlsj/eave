@@ -94,7 +94,7 @@ final class NotchPanelController {
             shouldIgnore = true
         case .ambient:
             shouldIgnore = !inside
-        case .peek, .bar:
+        case .peek:
             shouldIgnore = !inside
             if inside != stateMachine.isHovering {
                 stateMachine.setHovering(inside)
@@ -142,8 +142,6 @@ final class NotchPanelController {
         switch stateMachine.state {
         case .peek(_, let expanded) where expanded:
             extraPadding = 6
-        case .bar:
-            extraPadding = 4
         default:
             extraPadding = 2
         }

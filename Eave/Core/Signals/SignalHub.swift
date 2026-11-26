@@ -11,9 +11,9 @@ final class SignalHub {
     private let menuBarAXWatcher = MenuBarAXWatcher()
     let bridge = NotchBridge()
 
-    /// Bundle IDs automatically discovered in Eave's hidden/always-hidden menu bar sections.
+    /// Bundle IDs automatically discovered in Eave's hidden menu bar section.
     private(set) var discoveredHiddenBundleIDs: Set<String> = []
-    /// Live Dock unread badge labels keyed by bundle identifier (used to decorate Notch Bar icons).
+    /// Live Dock unread badge labels keyed by bundle identifier (used to decorate Second Row icons).
     private(set) var activeBadgesByBundleID: [String: String] = [:]
 
     init(settings: EaveSettings, stateMachine: NotchStateMachine) {
@@ -24,7 +24,7 @@ final class SignalHub {
 
     func start() {
         dockMonitor.start(interval: 2.0)
-        if settings.enableMenuBarAXWatcher {
+        if settings.enableNotchPeek {
             menuBarAXWatcher.start(interval: 4.0)
         }
         bridge.start()
@@ -37,12 +37,11 @@ final class SignalHub {
     }
 
     func syncSettings() {
-        if settings.enableMenuBarAXWatcher {
+        if settings.enableNotchPeek {
             menuBarAXWatcher.start(interval: 4.0)
         } else {
             menuBarAXWatcher.stop()
-        }
-        if !settings.enableAmbientIndicators {
+            stateMachine.dismissPeek()
             stateMachine.clearAllAmbient()
         }
     }
@@ -132,25 +131,25 @@ final class SignalHub {
             stateMachine.removeAmbient(id: "dock.\(clearedID)")
         }
 
-        if settings.enableAmbientIndicators {
-            let watched = effectiveWatchedBundleIDs()
-            for (bundleID, snap) in currentSnapshots where watched.contains(bundleID) {
-                stateMachine.upsertAmbient(
-                    AmbientIndicator(
-                        id: "dock.\(bundleID)",
-                        source: .dockBadge,
-                        title: snap.appName,
-                        badge: snap.badge,
-                        symbolName: nil,
-                        accentHex: "#EF4444",
-                        bundleIdentifier: bundleID,
-                        targetURL: nil
-                    )
+        guard settings.enableNotchPeek else { return }
+
+        let watched = effectiveWatchedBundleIDs()
+        for (bundleID, snap) in currentSnapshots where watched.contains(bundleID) {
+            stateMachine.upsertAmbient(
+                AmbientIndicator(
+                    id: "dock.\(bundleID)",
+                    source: .dockBadge,
+                    title: snap.appName,
+                    badge: snap.badge,
+                    symbolName: nil,
+                    accentHex: "#EF4444",
+                    bundleIdentifier: bundleID,
+                    targetURL: nil
                 )
-            }
+            )
         }
 
-        guard settings.enableNotchPeek, let latest = diff.newlyTriggered.last else { return }
+        guard let latest = diff.newlyTriggered.last else { return }
         let alert = NotchAlert(
             id: "dock.\(latest.bundleIdentifier).\(latest.badge)",
             source: .dockBadge,
@@ -166,21 +165,19 @@ final class SignalHub {
     }
 
     private func handleMenuBarAXChange(bundleID: String, appName: String, statusText: String) {
-        guard settings.enableMenuBarAXWatcher else { return }
-        if settings.enableNotchPeek {
-            let alert = NotchAlert(
-                id: "ax.\(bundleID)",
-                source: .menuBarAX,
-                title: appName,
-                subtitle: statusText,
-                badge: nil,
-                symbolName: "menubar.rectangle",
-                accentHex: "#60A5FA",
-                bundleIdentifier: bundleID,
-                duration: settings.peekDurationSeconds
-            )
-            stateMachine.presentPeek(alert)
-        }
+        guard settings.enableNotchPeek else { return }
+        let alert = NotchAlert(
+            id: "ax.\(bundleID)",
+            source: .menuBarAX,
+            title: appName,
+            subtitle: statusText,
+            badge: nil,
+            symbolName: "menubar.rectangle",
+            accentHex: "#60A5FA",
+            bundleIdentifier: bundleID,
+            duration: settings.peekDurationSeconds
+        )
+        stateMachine.presentPeek(alert)
     }
 
     private func handleBridgePayload(_ payload: BridgePayload) {
@@ -192,7 +189,7 @@ final class SignalHub {
             stateMachine.removeAmbient(id: key)
             stateMachine.dismissPeek()
         case .ambient:
-            guard settings.enableAmbientIndicators else { return }
+            guard settings.enableNotchPeek else { return }
             stateMachine.upsertAmbient(
                 AmbientIndicator(
                     id: key,
@@ -224,6 +221,13 @@ final class SignalHub {
     }
 
     private func activateApplication(bundleIdentifier: String) {
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first,
+           let bundleURL = app.bundleURL {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in }
+            return
+        }
         if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first {
             app.activate(options: [.activateAllWindows])
         } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {

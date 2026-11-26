@@ -1,20 +1,16 @@
 import AppKit
 import Foundation
 
-/// Lightweight global event monitor for menu bar scroll gestures, hover-to-expand, and click-away rehide.
+/// Lightweight global event monitor for Eave hover-to-reveal and click-away rehide.
 /// Designed for zero per-pixel Task allocations and negligible CPU overhead during normal mouse movement.
 @MainActor
 final class MenuBarEventMonitor {
     private let settings: EaveSettings
-    private var globalScrollMonitor: Any?
     private var globalClickMonitor: Any?
     private var globalMoveMonitor: Any?
     private var hoverTimer: Timer?
-    private var lastScrollTriggerTime: CFAbsoluteTime = 0
     private var lastMoveDispatchTime: CFAbsoluteTime = 0
 
-    var onScrollExpand: (() -> Void)?
-    var onScrollCollapse: (() -> Void)?
     var onHoverExpand: ((CGRect?) -> Void)?
     var onOutsideClick: (() -> Void)?
     var onMouseMoved: ((CGPoint) -> Void)?
@@ -22,7 +18,7 @@ final class MenuBarEventMonitor {
     var needsPointerTracking: (() -> Bool)?
     /// Screen-space frames of Eave's toggle button across ALL connected displays.
     var toggleItemFramesProvider: (() -> [CGRect])?
-    /// Returns true if hover expansion should be temporarily suppressed (e.g. context menu or another panel open).
+    /// Returns true if hover expansion should be temporarily suppressed (e.g. context menu or search open).
     var isHoverSuppressed: (() -> Bool)?
 
     private var isPointerOverEaveToggle: Bool = false
@@ -34,12 +30,6 @@ final class MenuBarEventMonitor {
 
     func start() {
         stop()
-
-        globalScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            MainActor.assumeIsolated {
-                self?.handleScroll(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY, location: NSEvent.mouseLocation)
-            }
-        }
 
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -55,10 +45,8 @@ final class MenuBarEventMonitor {
     }
 
     func stop() {
-        if let m = globalScrollMonitor { NSEvent.removeMonitor(m) }
         if let m = globalClickMonitor { NSEvent.removeMonitor(m) }
         if let m = globalMoveMonitor { NSEvent.removeMonitor(m) }
-        globalScrollMonitor = nil
         globalClickMonitor = nil
         globalMoveMonitor = nil
         hoverTimer?.invalidate()
@@ -112,22 +100,6 @@ final class MenuBarEventMonitor {
             hoveredToggleFrame = nil
             hoverTimer?.invalidate()
             hoverTimer = nil
-        }
-    }
-
-    private func handleScroll(deltaX: CGFloat, deltaY: CGFloat, location: CGPoint) {
-        guard settings.expandOnMenuBarScroll, isInMenuBar(location) else { return }
-        let now = CFAbsoluteTimeGetCurrent()
-        guard now - lastScrollTriggerTime > 0.35 else { return }
-
-        let magnitude = abs(deltaY) >= abs(deltaX) ? deltaY : deltaX
-        guard abs(magnitude) > 2.5 else { return }
-
-        lastScrollTriggerTime = now
-        if magnitude > 0 {
-            onScrollExpand?()
-        } else {
-            onScrollCollapse?()
         }
     }
 

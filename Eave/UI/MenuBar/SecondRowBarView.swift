@@ -194,10 +194,7 @@ struct SecondRowLayoutMetrics: Equatable, Sendable {
 // MARK: - Second-Row Floating Bar SwiftUI View
 
 /// High-FPS floating second-row menu bar directly beneath the macOS menu bar.
-/// Engineered for zero offscreen GPU passes:
-/// - Shadow is composited natively by WindowServer (`panel.hasShadow = true`), never via animated SwiftUI `.shadow`.
-/// - Panel fade uses hardware `NSWindow.alphaValue` instead of scaling live `.glassEffect` / blur layers.
-/// - Supports silky 120fps horizontal scrolling and configurable multi-row wrapping.
+/// Supports left-click and right-click forwarding while preserving 120fps scrolling and Dock magnification.
 struct SecondRowBarView: View {
     let controller: SecondRowBarController
 
@@ -222,6 +219,7 @@ struct SecondRowBarView: View {
         cardBody
             .frame(width: metrics.contentWidth, height: metrics.contentHeight)
             .eaveGlassSurface(cornerRadius: 14)
+            .preferredColorScheme(controller.appearanceMode.colorScheme)
             .onChange(of: controller.isVisible) { _, visible in
                 if !visible {
                     hoveredRowIndex = nil
@@ -268,11 +266,11 @@ struct SecondRowBarView: View {
         } else if controller.layoutMode == .horizontalScroll {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: metrics.horizontalSpacing) {
-                    ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, captured in
+                    ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, item in
                         let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredRowIndex)
                         SecondRowItemTile(
-                            captured: captured,
-                            badge: resolvedBadge(for: captured.info),
+                            item: item,
+                            badge: resolvedBadge(for: item),
                             width: metrics.tileWidth,
                             height: metrics.tileHeight,
                             magnification: mag,
@@ -283,9 +281,9 @@ struct SecondRowBarView: View {
                                     hoveredRowIndex = nil
                                 }
                             },
-                            onSelect: {
+                            onSelect: { button in
                                 EaveHaptics.tick()
-                                controller.selectItem(captured.info)
+                                controller.selectItem(item, button: button)
                             }
                         )
                     }
@@ -309,12 +307,12 @@ struct SecondRowBarView: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowItems in
                 let activeCol = (hoveredGridPos?.row == rowIndex) ? hoveredGridPos?.col : nil
                 HStack(spacing: metrics.horizontalSpacing) {
-                    ForEach(Array(rowItems.enumerated()), id: \.element.id) { colIndex, captured in
+                    ForEach(Array(rowItems.enumerated()), id: \.element.id) { colIndex, item in
                         let pos = GridPosition(row: rowIndex, col: colIndex)
                         let mag = EaveDockMagnification.resolve(index: colIndex, hoveredIndex: activeCol)
                         SecondRowItemTile(
-                            captured: captured,
-                            badge: resolvedBadge(for: captured.info),
+                            item: item,
+                            badge: resolvedBadge(for: item),
                             width: metrics.tileWidth,
                             height: metrics.tileHeight,
                             magnification: mag,
@@ -325,9 +323,9 @@ struct SecondRowBarView: View {
                                     hoveredGridPos = nil
                                 }
                             },
-                            onSelect: {
+                            onSelect: { button in
                                 EaveHaptics.tick()
-                                controller.selectItem(captured.info)
+                                controller.selectItem(item, button: button)
                             }
                         )
                     }
@@ -348,7 +346,7 @@ struct SecondRowBarView: View {
     }
 }
 
-// MARK: - Compact Skeleton & High-FPS Tile
+// MARK: - Compact Skeleton & High-FPS Dual-Click Tile
 
 private struct SecondRowSkeletonView: View {
     @State private var pulse = false
@@ -373,15 +371,16 @@ private struct SecondRowSkeletonView: View {
 }
 
 private struct SecondRowItemTile: View {
-    let captured: CapturedMenuBarItem
+    let item: MenuBarItemInfo
     let badge: String?
     let width: CGFloat
     let height: CGFloat
     let magnification: EaveDockMagnification
     let onHoverChanged: (Bool) -> Void
-    let onSelect: () -> Void
+    let onSelect: (MenuBarClickButton) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isRightPressed = false
 
     private var hoverFillColor: Color {
         if colorScheme == .dark {
@@ -391,8 +390,10 @@ private struct SecondRowItemTile: View {
     }
 
     var body: some View {
-        let resolved = AppIconService.shared.resolveIconOnly(for: captured.info)
-        Button(action: onSelect) {
+        let resolved = AppIconService.shared.resolveIconOnly(for: item)
+        Button {
+            onSelect(.left)
+        } label: {
             VStack(spacing: 3) {
                 ZStack(alignment: .topTrailing) {
                     iconVisual(image: resolved.image, symbolName: resolved.symbolName)
@@ -416,7 +417,7 @@ private struct SecondRowItemTile: View {
                 }
                 .padding(.top, 2)
 
-                Text(captured.info.appName)
+                Text(item.appName)
                     .font(.system(size: 9.5, weight: magnification.isPrimary ? .medium : .regular))
                     .foregroundStyle(.primary.opacity(magnification.isPrimary ? 0.96 : 0.68))
                     .lineLimit(1)
@@ -429,28 +430,27 @@ private struct SecondRowItemTile: View {
                     .fill(hoverFillColor)
             )
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .scaleEffect(isRightPressed ? 0.88 : 1.0)
+            .opacity(isRightPressed ? 0.84 : 1.0)
+            .animation(EaveMotion.pressSpring, value: isRightPressed)
             .animation(EaveMotion.dockWave, value: magnification)
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.88, pressedOpacity: 0.84))
+        .overlay(
+            RightClickCatcherView(
+                onPressChanged: { isRightPressed = $0 },
+                onRightClick: { onSelect(.right) }
+            )
+        )
         .onHover { hovering in
             onHoverChanged(hovering)
         }
-        .accessibilityLabel(captured.info.searchableText)
+        .accessibilityLabel(item.searchableText)
     }
 
     @ViewBuilder
     private func iconVisual(image: NSImage?, symbolName: String?) -> some View {
-        if captured.isLiveCapture, let live = captured.image {
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.primary.opacity(0.08))
-                    .frame(width: 28, height: 24)
-                Image(nsImage: live)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 22, maxHeight: 18)
-            }
-        } else if let appIcon = image {
+        if let appIcon = image {
             Image(nsImage: appIcon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -464,6 +464,78 @@ private struct SecondRowItemTile: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.80))
             }
+        }
+    }
+}
+
+/// Zero-overhead AppKit overlay that intercepts ONLY right-mouse events (letting hover, scroll, and left-click
+/// pass through untouched to SwiftUI for 120fps scrolling and Dock magnification).
+private struct RightClickCatcherView: NSViewRepresentable {
+    let onPressChanged: (Bool) -> Void
+    let onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> RightClickCatcherNSView {
+        let view = RightClickCatcherNSView()
+        view.onPressChanged = onPressChanged
+        view.onRightClick = onRightClick
+        return view
+    }
+
+    func updateNSView(_ nsView: RightClickCatcherNSView, context: Context) {
+        nsView.onPressChanged = onPressChanged
+        nsView.onRightClick = onRightClick
+    }
+}
+
+private final class RightClickCatcherNSView: NSView {
+    var onPressChanged: ((Bool) -> Void)?
+    var onRightClick: (() -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let event = NSApp.currentEvent else { return nil }
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
+            return super.hitTest(point)
+        case .leftMouseDown where event.modifierFlags.contains(.control):
+            return super.hitTest(point)
+        default:
+            return nil
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            onPressChanged?(true)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if event.modifierFlags.contains(.control) {
+            onPressChanged?(false)
+            let local = convert(event.locationInWindow, from: nil)
+            if bounds.contains(local) {
+                onRightClick?()
+            }
+            return
+        }
+        super.mouseUp(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onPressChanged?(true)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        onPressChanged?(false)
+        let local = convert(event.locationInWindow, from: nil)
+        if bounds.contains(local) {
+            onRightClick?()
         }
     }
 }

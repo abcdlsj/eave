@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Observation
 
-/// Phase 1 core: manages the three-section menu bar layout (Visible / Hidden / Always-Hidden)
+/// Manages Eave's two-section menu bar layout (Visible / Hidden)
 /// using standard NSStatusItem separator length inflation — zero private APIs, zero permissions required.
 @MainActor
 @Observable
@@ -11,6 +11,7 @@ final class MenuBarManager: NSObject {
     /// Compact divider slot width so the separator sits tightly between Visible and Hidden items
     /// without leaving excessive empty horizontal padding in the menu bar.
     static let expandedSeparatorLength: CGFloat = 10
+    private static let transientForwardRehideSeconds: TimeInterval = 4.0
 
     private let settings: EaveSettings
 
@@ -20,8 +21,6 @@ final class MenuBarManager: NSObject {
     private var toggleHoverView: StatusItemHoverView?
     // Separator between Visible and Hidden sections.
     private var hiddenSeparator: NSStatusItem!
-    // Optional separator between Hidden and Always-Hidden sections.
-    private var alwaysHiddenSeparator: NSStatusItem?
 
     private var rehideTimer: Timer?
     private var appSwitchObserver: Any?
@@ -30,15 +29,15 @@ final class MenuBarManager: NSObject {
     private var cachedMultiDisplayToggleFrames: [CGRect] = []
 
     private(set) var isHiddenExpanded: Bool = false
-    private(set) var isAlwaysHiddenExpanded: Bool = false
+    /// True when the menu bar was temporarily expanded solely to anchor a forwarded menu-bar-only app click.
+    private(set) var isTransientForwardExpansion: Bool = false
     private(set) var isContextMenuOpen: Bool = false
 
     /// Callbacks wired by AppCoordinator for cross-module orchestration.
-    var onRequestNotchBarToggle: (() -> Void)?
     var onRequestOpenSearch: (() -> Void)?
     var onRequestOpenSettings: (() -> Void)?
     var onRequestTestPeek: (() -> Void)?
-    var onExpansionChanged: ((Bool, Bool) -> Void)?
+    var onExpansionChanged: ((Bool) -> Void)?
     var onToggleHoverChanged: ((Bool) -> Void)?
     var onWillHandleToggleInteraction: (() -> Void)?
     var isPointerProtectedFromRehide: (() -> Bool)?
@@ -69,24 +68,9 @@ final class MenuBarManager: NSObject {
         toggleHoverView = nil
         NSStatusBar.system.removeStatusItem(toggleItem)
         NSStatusBar.system.removeStatusItem(hiddenSeparator)
-        if let always = alwaysHiddenSeparator {
-            NSStatusBar.system.removeStatusItem(always)
-            alwaysHiddenSeparator = nil
-        }
     }
 
     // MARK: - Public Controls
-
-    func syncConfiguration() {
-        if settings.enableAlwaysHiddenSection {
-            ensureAlwaysHiddenSeparator()
-        } else if let existing = alwaysHiddenSeparator {
-            NSStatusBar.system.removeStatusItem(existing)
-            alwaysHiddenSeparator = nil
-            isAlwaysHiddenExpanded = false
-        }
-        applySeparatorLengths()
-    }
 
     func toggleHidden() {
         if isHiddenExpanded {
@@ -96,38 +80,37 @@ final class MenuBarManager: NSObject {
         }
     }
 
-    func expandHidden(includeAlwaysHidden: Bool = false) {
+    func expandHidden() {
+        isTransientForwardExpansion = false
         isHiddenExpanded = true
-        if includeAlwaysHidden && settings.enableAlwaysHiddenSection {
-            isAlwaysHiddenExpanded = true
-        }
         applySeparatorLengths()
         scheduleAutoRehideIfNeeded()
-        onExpansionChanged?(isHiddenExpanded, isAlwaysHiddenExpanded)
+        onExpansionChanged?(true)
     }
 
-    func toggleAlwaysHidden() {
-        guard settings.enableAlwaysHiddenSection else {
-            toggleHidden()
-            return
-        }
-        if isAlwaysHiddenExpanded {
-            isAlwaysHiddenExpanded = false
-            applySeparatorLengths()
-            onExpansionChanged?(isHiddenExpanded, isAlwaysHiddenExpanded)
-        } else {
-            expandHidden(includeAlwaysHidden: true)
-        }
+    /// Briefly reveals the hidden section so a menu-bar-only popover/menu can anchor at the top-right,
+    /// then collapses immediately once interaction ends.
+    func expandTemporarilyForForwarding() {
+        isTransientForwardExpansion = true
+        isHiddenExpanded = true
+        applySeparatorLengths()
+        scheduleAutoRehideIfNeeded()
+        onExpansionChanged?(true)
+    }
+
+    func collapseIfTransient() {
+        guard isTransientForwardExpansion else { return }
+        collapseAll()
     }
 
     func collapseAll() {
-        guard isHiddenExpanded || isAlwaysHiddenExpanded else { return }
+        guard isHiddenExpanded else { return }
         rehideTimer?.invalidate()
         rehideTimer = nil
         isHiddenExpanded = false
-        isAlwaysHiddenExpanded = false
+        isTransientForwardExpansion = false
         applySeparatorLengths()
-        onExpansionChanged?(false, false)
+        onExpansionChanged?(false)
     }
 
     /// Resets the auto-rehide countdown (for example while the user interacts with expanded items).
@@ -136,7 +119,7 @@ final class MenuBarManager: NSObject {
         scheduleAutoRehideIfNeeded()
     }
 
-    // MARK: - Separator Coordinates (Used by Phase 3 Scanner & Multi-Display Hover Bar)
+    // MARK: - Separator Coordinates (Used by Scanner & Multi-Display Hover Bar)
 
     /// Screen-space frame of Eave's primary toggle status item button (AppKit global coordinates).
     var toggleItemFrame: CGRect? {
@@ -144,8 +127,6 @@ final class MenuBarManager: NSObject {
     }
 
     /// Screen-space frames of Eave's toggle status item across ALL connected displays (AppKit global coordinates).
-    /// On multi-monitor macOS setups, `NSStatusItem.button?.window` only covers one display while Control Center
-    /// renders mirror toggle items on every other display.
     var allToggleItemFrames: [CGRect] {
         var frames = cachedMultiDisplayToggleFrames
         if let primaryFrame = toggleItemFrame, primaryFrame.width > 0, primaryFrame.height > 0 {
@@ -157,8 +138,6 @@ final class MenuBarManager: NSObject {
             }
         }
 
-        // If any display still lacks a cached frame (e.g., before first window-list refresh),
-        // project the right-edge offset from the primary toggle frame so hover works immediately on all monitors.
         let screenFrames = NSScreen.screens.map(\.frame)
         if let anchor = frames.first, screenFrames.count > frames.count {
             let projected = Self.projectedToggleFrames(from: anchor, screens: screenFrames)
@@ -278,18 +257,12 @@ final class MenuBarManager: NSObject {
         hiddenSeparator.button?.window?.frame.maxX
     }
 
-    /// Screen-space X coordinate of the Always-Hidden separator's right edge.
-    var alwaysHiddenSeparatorX: CGFloat? {
-        alwaysHiddenSeparator?.button?.window?.frame.maxX
-    }
-
     /// Window IDs owned by Eave's own control items so the scanner excludes them.
     var ownedWindowIDs: Set<CGWindowID> {
         var ids = Set<CGWindowID>()
         let windows = [
             toggleItem.button?.window,
-            hiddenSeparator.button?.window,
-            alwaysHiddenSeparator?.button?.window
+            hiddenSeparator.button?.window
         ]
         for window in windows {
             if let num = window?.windowNumber, num > 0, let wid = CGWindowID(exactly: num) {
@@ -302,12 +275,8 @@ final class MenuBarManager: NSObject {
     // MARK: - Setup
 
     private func setupStatusItems() {
-        // Seed rightmost Preferred Positions on first launch so Eave stays visible
-        // beside Control Center even when the user's menu bar is already full.
         seedInitialPreferredPositionsIfNeeded()
 
-        // Order of creation establishes sensible initial left-to-right placement:
-        // [AlwaysHidden Separator] ... [Hidden Separator] ... [Toggle Anchor]
         toggleItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         toggleItem.autosaveName = "eave.control.toggle"
         configureToggleButton()
@@ -316,13 +285,9 @@ final class MenuBarManager: NSObject {
         hiddenSeparator.autosaveName = "eave.control.hidden"
         configureSeparatorButton(
             hiddenSeparator,
-            image: Self.makeDividerImage(style: .dot),
-            tooltip: "Eave Hidden Section Divider (⌘-drag icons left to hide)"
+            image: Self.makeDividerImage(),
+            tooltip: "Eave Hidden Divider (⌘-drag icons left to hide)"
         )
-
-        if settings.enableAlwaysHiddenSection {
-            ensureAlwaysHiddenSeparator()
-        }
 
         applySeparatorLengths()
     }
@@ -331,7 +296,6 @@ final class MenuBarManager: NSObject {
         let defaults = UserDefaults.standard
         let toggleKey = "NSStatusItem Preferred Position eave.control.toggle"
         let hiddenKey = "NSStatusItem Preferred Position eave.control.hidden"
-        let alwaysKey = "NSStatusItem Preferred Position eave.control.alwaysHidden"
 
         if defaults.object(forKey: toggleKey) == nil {
             defaults.set(0.0, forKey: toggleKey)
@@ -339,57 +303,21 @@ final class MenuBarManager: NSObject {
         if defaults.object(forKey: hiddenKey) == nil {
             defaults.set(40.0, forKey: hiddenKey)
         }
-        // Place Always-Hidden far to the left when opted in so it never traps normal icons.
-        if defaults.object(forKey: alwaysKey) == nil {
-            defaults.set(1200.0, forKey: alwaysKey)
-        }
     }
 
-    private func ensureAlwaysHiddenSeparator() {
-        guard alwaysHiddenSeparator == nil else { return }
-        let item = NSStatusBar.system.statusItem(withLength: Self.collapsedSeparatorLength)
-        item.autosaveName = "eave.control.alwaysHidden"
-        configureSeparatorButton(
-            item,
-            image: Self.makeDividerImage(style: .doubleDot),
-            tooltip: "Eave Always-Hidden Divider (⌘-drag icons left to keep hidden)"
-        )
-        alwaysHiddenSeparator = item
-    }
-
-    private enum DividerStyle {
-        case dot
-        case doubleDot
-    }
-
-    /// Renders a crisp, ultra-compact template divider glyph harmonized with macOS menu bar aesthetics.
-    /// A precision centered dot (`•`) cleanly separates Visible and Hidden items without the clutter
-    /// or ambiguity of a pipe (`|`), while double-dot (`:`) marks the Always-Hidden boundary.
-    private static func makeDividerImage(style: DividerStyle) -> NSImage {
+    /// Renders a crisp, ultra-compact centered dot (`•`) template divider glyph separating Visible and Hidden items.
+    private static func makeDividerImage() -> NSImage {
         let size = NSSize(width: 8, height: 18)
         let image = NSImage(size: size, flipped: false) { rect in
             NSColor.black.setFill()
-            switch style {
-            case .dot:
-                let diameter: CGFloat = 4.0
-                let dotRect = NSRect(
-                    x: (rect.width - diameter) / 2,
-                    y: (rect.height - diameter) / 2,
-                    width: diameter,
-                    height: diameter
-                )
-                NSBezierPath(ovalIn: dotRect).fill()
-
-            case .doubleDot:
-                let dot: CGFloat = 2.6
-                let gap: CGFloat = 2.8
-                let cx = (rect.width - dot) / 2
-                let cy = rect.height / 2
-                let topRect = NSRect(x: cx, y: cy + gap / 2, width: dot, height: dot)
-                let botRect = NSRect(x: cx, y: cy - gap / 2 - dot, width: dot, height: dot)
-                NSBezierPath(ovalIn: topRect).fill()
-                NSBezierPath(ovalIn: botRect).fill()
-            }
+            let diameter: CGFloat = 4.0
+            let dotRect = NSRect(
+                x: (rect.width - diameter) / 2,
+                y: (rect.height - diameter) / 2,
+                width: diameter,
+                height: diameter
+            )
+            NSBezierPath(ovalIn: dotRect).fill()
             return true
         }
         image.isTemplate = true
@@ -436,11 +364,6 @@ final class MenuBarManager: NSObject {
         hiddenSeparator.length = isHiddenExpanded ? Self.expandedSeparatorLength : Self.collapsedSeparatorLength
         hiddenSeparator.button?.isHidden = !isHiddenExpanded
 
-        if let always = alwaysHiddenSeparator {
-            always.length = isAlwaysHiddenExpanded ? Self.expandedSeparatorLength : Self.collapsedSeparatorLength
-            always.button?.isHidden = !isAlwaysHiddenExpanded
-        }
-
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.16
             toggleItem.button?.animator().alphaValue = isHiddenExpanded ? 1.0 : 0.85
@@ -453,7 +376,7 @@ final class MenuBarManager: NSObject {
         onWillHandleToggleInteraction?()
 
         guard let event = NSApp.currentEvent else {
-            performPrimaryToggle()
+            toggleHidden()
             return
         }
 
@@ -462,20 +385,7 @@ final class MenuBarManager: NSObject {
             return
         }
 
-        if event.modifierFlags.contains(.option) {
-            toggleAlwaysHidden()
-            return
-        }
-
-        performPrimaryToggle()
-    }
-
-    private func performPrimaryToggle() {
-        if settings.useNotchBarOnToggle {
-            onRequestNotchBarToggle?()
-        } else {
-            toggleHidden()
-        }
+        toggleHidden()
     }
 
     private func presentContextMenu(from button: NSStatusBarButton) {
@@ -491,14 +401,6 @@ final class MenuBarManager: NSObject {
         let toggleTitle = isHiddenExpanded ? "Hide Menu Bar Items" : "Show Hidden Items"
         let toggleSymbol = isHiddenExpanded ? "eye.slash" : "eye"
         menu.addItem(makeItem(title: toggleTitle, symbol: toggleSymbol, action: #selector(menuToggleHidden)))
-
-        if settings.enableAlwaysHiddenSection {
-            let alwaysTitle = isAlwaysHiddenExpanded ? "Hide Always-Hidden Items" : "Show Always-Hidden Items"
-            let alwaysSymbol = isAlwaysHiddenExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical"
-            menu.addItem(makeItem(title: alwaysTitle, symbol: alwaysSymbol, action: #selector(menuToggleAlwaysHidden)))
-        }
-
-        menu.addItem(makeItem(title: "Toggle Notch Bar", symbol: "macbook", action: #selector(menuToggleNotchBar)))
         menu.addItem(makeItem(title: "Search Menu Bar...", symbol: "magnifyingglass", action: #selector(menuOpenSearch)))
 
         menu.addItem(.separator())
@@ -519,8 +421,6 @@ final class MenuBarManager: NSObject {
     }
 
     @objc private func menuToggleHidden() { toggleHidden() }
-    @objc private func menuToggleAlwaysHidden() { toggleAlwaysHidden() }
-    @objc private func menuToggleNotchBar() { onRequestNotchBarToggle?() }
     @objc private func menuOpenSearch() { onRequestOpenSearch?() }
     @objc private func menuTestPeek() { onRequestTestPeek?() }
     @objc private func menuOpenSettings() { onRequestOpenSettings?() }
@@ -535,7 +435,8 @@ final class MenuBarManager: NSObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.settings.rehideOnAppSwitch, self.isHiddenExpanded else { return }
+                guard let self, self.isHiddenExpanded else { return }
+                guard self.settings.rehideAutomatically || self.isTransientForwardExpansion else { return }
                 if self.isPointerProtectedFromRehide?() == true { return }
                 self.collapseAll()
             }
@@ -567,12 +468,19 @@ final class MenuBarManager: NSObject {
     private func scheduleAutoRehideIfNeeded() {
         rehideTimer?.invalidate()
         rehideTimer = nil
-        guard settings.rehideAutomatically, settings.rehideDelaySeconds > 0 else { return }
 
-        rehideTimer = Timer.scheduledTimer(withTimeInterval: settings.rehideDelaySeconds, repeats: false) { [weak self] _ in
+        let delay: TimeInterval
+        if isTransientForwardExpansion {
+            delay = Self.transientForwardRehideSeconds
+        } else if settings.rehideAutomatically {
+            delay = EaveSettings.defaultAutoRehideDelaySeconds
+        } else {
+            return
+        }
+
+        rehideTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isHiddenExpanded else { return }
-                // Pause auto-rehide while the cursor stays in the menu bar or Notch Bar.
                 if self.isCursorInMenuBar() || self.isPointerProtectedFromRehide?() == true {
                     self.scheduleAutoRehideIfNeeded()
                     return

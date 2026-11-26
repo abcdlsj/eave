@@ -54,39 +54,37 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     private var panel: MenuBarSearchWindow?
     private var keyMonitor: Any?
     private var closeTask: Task<Void, Never>?
-    private var preferredAppearance: NSAppearance?
 
+    private(set) var appearanceMode: AppAppearanceMode = .system
     var query: String = "" {
         didSet { selectedIndex = 0 }
     }
     var sectionFilter: SearchSectionFilter = .all {
         didSet { selectedIndex = 0 }
     }
-    var allItems: [CapturedMenuBarItem] = []
+    var allItems: [MenuBarItemInfo] = []
     var selectedIndex: Int = 0
     private(set) var isVisible: Bool = false
     private(set) var isPresented: Bool = false
     private(set) var isRefreshing: Bool = false
 
     var onSelectItem: ((MenuBarItemInfo) -> Void)?
-    var onRequestRefreshItems: (() async -> [CapturedMenuBarItem])?
+    var onRequestRefreshItems: (() async -> [MenuBarItemInfo])?
 
-    var filteredItems: [CapturedMenuBarItem] {
-        let scoped = allItems.filter { sectionFilter.matches($0.info.section) }
-        let infoMap = Dictionary(uniqueKeysWithValues: scoped.map { ($0.info.id, $0) })
-        let rankedInfos = MenuBarSearchEngine.filter(items: scoped.map(\.info), query: query)
-        return rankedInfos.compactMap { infoMap[$0.id] }
+    var filteredItems: [MenuBarItemInfo] {
+        let scoped = allItems.filter { sectionFilter.matches($0.section) }
+        return MenuBarSearchEngine.filter(items: scoped, query: query)
     }
 
     func count(for filter: SearchSectionFilter) -> Int {
         allItems.reduce(into: 0) { count, item in
-            if filter.matches(item.info.section) { count += 1 }
+            if filter.matches(item.section) { count += 1 }
         }
     }
 
-    func applyAppearance(_ appearance: NSAppearance?) {
-        preferredAppearance = appearance
-        panel?.appearance = appearance
+    func applyAppearance(_ mode: AppAppearanceMode) {
+        appearanceMode = mode
+        panel?.appearance = mode.nsAppearance
     }
 
     func toggle() {
@@ -110,7 +108,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         if panel == nil {
             let rect = NSRect(x: 0, y: 0, width: 556, height: 416)
             let window = MenuBarSearchWindow(contentRect: rect)
-            window.appearance = preferredAppearance
+            window.appearance = appearanceMode.nsAppearance
             window.delegate = self
             let view = MenuBarSearchView(controller: self)
             window.contentView = NSHostingView(rootView: view)
@@ -167,7 +165,7 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
     func selectCurrent() {
         let items = filteredItems
         guard items.indices.contains(selectedIndex) else { return }
-        let chosen = items[selectedIndex].info
+        let chosen = items[selectedIndex]
         EaveHaptics.tick()
         close()
         onSelectItem?(chosen)
@@ -321,7 +319,7 @@ struct MenuBarSearchView: View {
                                         }
                                     },
                                     onTap: {
-                                        controller.select(item.info)
+                                        controller.select(item)
                                     }
                                 )
                                 .id(index)
@@ -360,6 +358,7 @@ struct MenuBarSearchView: View {
         }
         .frame(width: 536, height: 396)
         .eaveGlassSurface(cornerRadius: 18)
+        .preferredColorScheme(controller.appearanceMode.colorScheme)
         .scaleEffect(controller.isPresented ? 1.0 : 0.965)
         .offset(y: controller.isPresented ? 0 : -6)
         .opacity(controller.isPresented ? 1.0 : 0.0)
@@ -415,7 +414,7 @@ struct MenuBarSearchView: View {
 }
 
 private struct SearchItemRow: View {
-    let item: CapturedMenuBarItem
+    let item: MenuBarItemInfo
     let query: String
     let isSelected: Bool
     let selectionNamespace: Namespace.ID
@@ -423,7 +422,7 @@ private struct SearchItemRow: View {
     let onTap: () -> Void
 
     private var resolved: AppIconService.ResolvedIcon {
-        AppIconService.shared.resolve(for: item.info)
+        AppIconService.shared.resolve(for: item)
     }
 
     var body: some View {
@@ -433,11 +432,11 @@ private struct SearchItemRow: View {
                     .frame(width: 28, height: 28)
 
                 VStack(alignment: .leading, spacing: 1.5) {
-                    highlightedText(item.info.appName, query: query)
+                    highlightedText(item.appName, query: query)
                         .lineLimit(1)
 
-                    if !item.info.title.isEmpty && item.info.title != item.info.appName {
-                        Text(item.info.title)
+                    if !item.title.isEmpty && item.title != item.appName {
+                        Text(item.title)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -446,14 +445,14 @@ private struct SearchItemRow: View {
 
                 Spacer()
 
-                Text(item.info.section.displayName)
+                Text(item.section.displayName)
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(item.info.section == .visible ? .tertiary : .secondary)
+                    .foregroundStyle(item.section == .visible ? .tertiary : .secondary)
                     .padding(.horizontal, 7.5)
                     .padding(.vertical, 2.5)
                     .background(
                         Capsule()
-                            .fill(item.info.section == .visible ? Color.clear : Color.primary.opacity(0.06))
+                            .fill(item.section == .visible ? Color.clear : Color.primary.opacity(0.06))
                     )
 
                 if isSelected {

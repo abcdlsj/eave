@@ -24,12 +24,10 @@
 		5F4CA75CE96537F477808424 /* NotchPeekView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D35FFFA469ED667D5EBC389B /* NotchPeekView.swift */; };
 		64B41A88679E38675A322605 /* NotchContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549B9761D5E0153204342BE8 /* NotchContainerView.swift */; };
 		66DF7BB162833938A8B03784 /* MenuBarEventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */; };
-		686F5EFC36DB1D35358AE749 /* MenuBarImageCapturer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3687B5BF8D5564CAFE0C693B /* MenuBarImageCapturer.swift */; };
 		9054E703F77FF4F1D565C2C1 /* SecondRowBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0286D2F0068C12FE60C8F280 /* SecondRowBarView.swift */; };
 		92A5A91616C1A1784F2B7B39 /* NotchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE533D6DEB6C9E120B0F643E /* NotchModels.swift */; };
 		9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */; };
 		9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65C078762E103E936EA304CE /* EaveApp.swift */; };
-		A4E72636C8ED7C8CBAE05266 /* NotchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52535BBF6DEA02E91B600F80 /* NotchBarView.swift */; };
 		A59B7A8A2DA83AB4D316D741 /* DockBadgeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */; };
 		AD127BBAFEA15634C14FEDC1 /* EaveDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1774C6F7E8BF81B85E23190 /* EaveDesignSystem.swift */; };
 		B46B1B5B20ABB1EFD398BD5F /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2E4D987DFA6DF8200B706E /* LaunchAtLoginService.swift */; };
@@ -61,11 +59,9 @@
 		197B80E0F48811FECFDC63E1 /* MenuBarItemScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarItemScanner.swift; sourceTree = "<group>"; };
 		2B1F1D2A14C1838E3C770F5B /* PermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsManager.swift; sourceTree = "<group>"; };
 		2ECDDB5F653B029856620C67 /* NotchGeometryResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchGeometryResolver.swift; sourceTree = "<group>"; };
-		3687B5BF8D5564CAFE0C693B /* MenuBarImageCapturer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarImageCapturer.swift; sourceTree = "<group>"; };
 		3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondRowBarController.swift; sourceTree = "<group>"; };
 		3EBDA3A35D04D8F9A2D47592 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockBadgeMonitor.swift; sourceTree = "<group>"; };
-		52535BBF6DEA02E91B600F80 /* NotchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchBarView.swift; sourceTree = "<group>"; };
 		549B9761D5E0153204342BE8 /* NotchContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchContainerView.swift; sourceTree = "<group>"; };
 		5CE22ECF8585B626AFBF61B6 /* MenuBarSearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarSearchPanel.swift; sourceTree = "<group>"; };
 		5D533DE34AFEBEE102F24992 /* NotchStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchStateMachine.swift; sourceTree = "<group>"; };
@@ -100,7 +96,6 @@
 			children = (
 				E85CC8D6F7218AB30845DFDA /* MenuBarClickForwarder.swift */,
 				125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */,
-				3687B5BF8D5564CAFE0C693B /* MenuBarImageCapturer.swift */,
 				197B80E0F48811FECFDC63E1 /* MenuBarItemScanner.swift */,
 				7BFF31D6ECADB9071B56A235 /* MenuBarManager.swift */,
 				ECEF33195E368750CF215899 /* MenuBarSpacingManager.swift */,
@@ -267,7 +262,6 @@
 		FBA689782C05310327468AC8 /* Notch */ = {
 			isa = PBXGroup;
 			children = (
-				52535BBF6DEA02E91B600F80 /* NotchBarView.swift */,
 				549B9761D5E0153204342BE8 /* NotchContainerView.swift */,
 				D35FFFA469ED667D5EBC389B /* NotchPeekView.swift */,
 				DEA5CE1E7FB213AEE39F8065 /* NotchShape.swift */,
@@ -387,13 +381,11 @@
 				489A7A16889CDC72F53A0317 /* MenuBarAXWatcher.swift in Sources */,
 				328D96051E02F7A87EE70C9F /* MenuBarClickForwarder.swift in Sources */,
 				66DF7BB162833938A8B03784 /* MenuBarEventMonitor.swift in Sources */,
-				686F5EFC36DB1D35358AE749 /* MenuBarImageCapturer.swift in Sources */,
 				0AB787FDFE6DFF024AC059F2 /* MenuBarItemScanner.swift in Sources */,
 				F0AFC1D6DF21832C54A61F02 /* MenuBarManager.swift in Sources */,
 				D095C2B451D2A55D8CB9D078 /* MenuBarModels.swift in Sources */,
 				BDFC17939B5BCE38530FD727 /* MenuBarSearchPanel.swift in Sources */,
 				BE2FBA243544699A28762A21 /* MenuBarSpacingManager.swift in Sources */,
-				A4E72636C8ED7C8CBAE05266 /* NotchBarView.swift in Sources */,
 				54E2B00C1E563A4922FE0FCE /* NotchBridge.swift in Sources */,
 				64B41A88679E38675A322605 /* NotchContainerView.swift in Sources */,
 				51C98EB500CFB24B0292A64C /* NotchGeometryResolver.swift in Sources */,

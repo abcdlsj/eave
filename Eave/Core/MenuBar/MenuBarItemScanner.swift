@@ -5,15 +5,11 @@ import Foundation
 
 /// Pure section classifier & fuzzy search engine (isolated for deterministic unit tests).
 enum MenuBarSearchEngine {
-    /// Classifies an item's X coordinate relative to Eave's separator positions.
+    /// Classifies an item's X coordinate relative to Eave's hidden separator position.
     static func classifySection(
         itemMidX: CGFloat,
-        hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?
+        hiddenSeparatorX: CGFloat?
     ) -> MenuBarSection {
-        if let alwaysX = alwaysHiddenSeparatorX, itemMidX < alwaysX {
-            return .alwaysHidden
-        }
         if let hiddenX = hiddenSeparatorX, itemMidX < hiddenX {
             return .hidden
         }
@@ -51,8 +47,7 @@ enum MenuBarSearchEngine {
     private static func sectionRank(_ section: MenuBarSection) -> Int {
         switch section {
         case .hidden: 0
-        case .alwaysHidden: 1
-        case .visible: 2
+        case .visible: 1
         }
     }
 
@@ -187,7 +182,6 @@ final class MenuBarItemScanner {
     /// Scans menu bar items off the main thread so Accessibility IPC never causes UI stutter.
     func scanAsync(
         hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?,
         excludingWindowIDs: Set<CGWindowID>,
         forceFullAXSweep: Bool = false
     ) async -> [MenuBarItemInfo] {
@@ -226,7 +220,6 @@ final class MenuBarItemScanner {
                 axCandidates: axCandidates,
                 menuBarHeight: primaryHeight,
                 hiddenSeparatorX: hiddenSeparatorX,
-                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
                 excludingWindowIDs: excludingWindowIDs,
                 ownPID: ownPID,
                 ownBundleID: ownBundleID,
@@ -244,7 +237,6 @@ final class MenuBarItemScanner {
     /// Synchronous convenience scan (used only when an immediate coordinate lookup is required).
     func scan(
         hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?,
         excludingWindowIDs: Set<CGWindowID>
     ) -> [MenuBarItemInfo] {
         let primaryHeight = NotchGeometryResolver.currentGeometry().menuBarHeight
@@ -264,7 +256,6 @@ final class MenuBarItemScanner {
             axCandidates: runningApps,
             menuBarHeight: primaryHeight,
             hiddenSeparatorX: hiddenSeparatorX,
-            alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
             excludingWindowIDs: excludingWindowIDs,
             ownPID: ownPID,
             ownBundleID: ownBundleID,
@@ -277,7 +268,6 @@ final class MenuBarItemScanner {
         axCandidates: [RunningAppSnapshot],
         menuBarHeight: CGFloat,
         hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?,
         excludingWindowIDs: Set<CGWindowID>,
         ownPID: pid_t,
         ownBundleID: String,
@@ -289,8 +279,7 @@ final class MenuBarItemScanner {
         if axTrusted && !axCandidates.isEmpty {
             discovered = scanAccessibilityExtrasParallel(
                 runningApps: axCandidates,
-                hiddenSeparatorX: hiddenSeparatorX,
-                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+                hiddenSeparatorX: hiddenSeparatorX
             )
             axPIDs = Set(discovered.map(\.pid))
         }
@@ -299,7 +288,6 @@ final class MenuBarItemScanner {
             runningApps: runningApps,
             menuBarHeight: menuBarHeight,
             hiddenSeparatorX: hiddenSeparatorX,
-            alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
             excludingWindowIDs: excludingWindowIDs,
             ownPID: ownPID,
             ownBundleID: ownBundleID
@@ -364,7 +352,6 @@ final class MenuBarItemScanner {
         runningApps: [RunningAppSnapshot],
         menuBarHeight: CGFloat,
         hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?,
         excludingWindowIDs: Set<CGWindowID>,
         ownPID: pid_t,
         ownBundleID: String
@@ -375,7 +362,6 @@ final class MenuBarItemScanner {
             runningApps: runningApps,
             menuBarHeight: menuBarHeight,
             hiddenSeparatorX: hiddenSeparatorX,
-            alwaysHiddenSeparatorX: alwaysHiddenSeparatorX,
             excludingWindowIDs: excludingWindowIDs,
             ownPID: ownPID,
             ownBundleID: ownBundleID
@@ -390,7 +376,6 @@ final class MenuBarItemScanner {
         runningApps: [RunningAppSnapshot],
         menuBarHeight: CGFloat,
         hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?,
         excludingWindowIDs: Set<CGWindowID>,
         ownPID: pid_t,
         ownBundleID: String = "com.abcdlsj.eave"
@@ -503,8 +488,7 @@ final class MenuBarItemScanner {
                     } else {
                         section = MenuBarSearchEngine.classifySection(
                             itemMidX: bounds.midX,
-                            hiddenSeparatorX: sep.hiddenMaxX,
-                            alwaysHiddenSeparatorX: nil
+                            hiddenSeparatorX: sep.hiddenMaxX
                         )
                     }
                 } else if !win.isOnScreen {
@@ -512,8 +496,7 @@ final class MenuBarItemScanner {
                 } else {
                     section = MenuBarSearchEngine.classifySection(
                         itemMidX: bounds.midX,
-                        hiddenSeparatorX: hiddenSeparatorX,
-                        alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+                        hiddenSeparatorX: hiddenSeparatorX
                     )
                 }
 
@@ -548,8 +531,7 @@ final class MenuBarItemScanner {
 
             let section = MenuBarSearchEngine.classifySection(
                 itemMidX: bounds.midX,
-                hiddenSeparatorX: hiddenSeparatorX,
-                alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+                hiddenSeparatorX: hiddenSeparatorX
             )
 
             results.append(
@@ -592,8 +574,7 @@ final class MenuBarItemScanner {
 
     private nonisolated static func scanAccessibilityExtrasParallel(
         runningApps: [RunningAppSnapshot],
-        hiddenSeparatorX: CGFloat?,
-        alwaysHiddenSeparatorX: CGFloat?
+        hiddenSeparatorX: CGFloat?
     ) -> [MenuBarItemInfo] {
         let collector = LockedItemCollector()
         DispatchQueue.concurrentPerform(iterations: runningApps.count) { idx in
@@ -627,8 +608,7 @@ final class MenuBarItemScanner {
 
                 let section = MenuBarSearchEngine.classifySection(
                     itemMidX: frame.midX,
-                    hiddenSeparatorX: hiddenSeparatorX,
-                    alwaysHiddenSeparatorX: alwaysHiddenSeparatorX
+                    hiddenSeparatorX: hiddenSeparatorX
                 )
 
                 appItems.append(

@@ -1,15 +1,13 @@
 import AppKit
 import ApplicationServices
-import CoreGraphics
 import Foundation
 import Observation
 
-/// Tracks optional and elevated macOS privacy permissions required for Phase 2 & 3 features.
+/// Tracks optional macOS Accessibility permission required for hidden-app signals and click forwarding.
 @MainActor
 @Observable
 final class PermissionsManager {
     private(set) var hasAccessibility: Bool = false
-    private(set) var hasScreenRecording: Bool = false
 
     private var pollTimer: Timer?
 
@@ -19,7 +17,6 @@ final class PermissionsManager {
 
     func refresh() {
         hasAccessibility = AXIsProcessTrusted()
-        hasScreenRecording = CGPreflightScreenCaptureAccess()
     }
 
     func startPolling(interval: TimeInterval = 2.5) {
@@ -43,19 +40,8 @@ final class PermissionsManager {
         refresh()
     }
 
-    func requestScreenRecordingPrompt() {
-        _ = CGRequestScreenCaptureAccess()
-        refresh()
-    }
-
     func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    func openScreenRecordingSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
     }

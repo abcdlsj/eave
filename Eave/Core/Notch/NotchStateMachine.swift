@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Unified deterministic state machine governing Notch presentation:
-/// `idle` <-> `ambient` <-> `peek(alert, expanded)` <-> `bar`.
+/// `idle` <-> `ambient` <-> `peek(alert, expanded)`.
 @MainActor
 @Observable
 final class NotchStateMachine {
@@ -11,18 +11,11 @@ final class NotchStateMachine {
     private(set) var isHovering: Bool = false
 
     private var peekDismissTask: Task<Void, Never>?
-    private var pendingPeekAfterBar: NotchAlert?
 
     /// Optional clock/scheduler hook so unit tests can run deterministically without real sleeps.
     var enableAutoDismissTimers: Bool = true
 
     func presentPeek(_ alert: NotchAlert) {
-        if case .bar = state {
-            // Do not interrupt the user while browsing the Notch Bar; remember latest alert.
-            pendingPeekAfterBar = alert
-            return
-        }
-
         peekDismissTask?.cancel()
         state = .peek(alert, expanded: false)
         schedulePeekDismiss(after: alert.duration)
@@ -74,29 +67,6 @@ final class NotchStateMachine {
         }
     }
 
-    func openBar() {
-        peekDismissTask?.cancel()
-        peekDismissTask = nil
-        state = .bar
-    }
-
-    func closeBar() {
-        guard case .bar = state else { return }
-        transitionToRestingState()
-        if let pending = pendingPeekAfterBar {
-            pendingPeekAfterBar = nil
-            presentPeek(pending)
-        }
-    }
-
-    func toggleBar() {
-        if case .bar = state {
-            closeBar()
-        } else {
-            openBar()
-        }
-    }
-
     func setHovering(_ hovering: Bool) {
         isHovering = hovering
         switch state {
@@ -113,15 +83,10 @@ final class NotchStateMachine {
         }
     }
 
-    var isBarOpen: Bool {
-        if case .bar = state { return true }
-        return false
-    }
-
     var isInteractiveState: Bool {
         switch state {
         case .idle: false
-        case .ambient, .peek, .bar: true
+        case .ambient, .peek: true
         }
     }
 

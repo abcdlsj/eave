@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Appearance Mapping
+
+extension AppAppearanceMode {
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+}
+
 // MARK: - Unified Motion Language
 
 /// Curated spring and easing curves tuned for 120Hz ProMotion macOS displays.
@@ -22,7 +42,6 @@ enum EaveMotion {
 }
 
 /// Subtle macOS Dock-style proximity magnification curve for icon shelves.
-/// Intentionally restrained so icons feel responsive and alive without distracting distortion.
 struct EaveDockMagnification: Equatable, Sendable {
     let scale: CGFloat
     let liftY: CGFloat
@@ -56,6 +75,58 @@ enum EaveHaptics {
     }
 }
 
+// MARK: - Adaptive Light / Dark Surface Palette
+
+enum EavePalette {
+    static func canvas(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 0.086, green: 0.088, blue: 0.096)
+            : Color(red: 0.962, green: 0.964, blue: 0.972)
+    }
+
+    static func sidebar(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 0.068, green: 0.070, blue: 0.078)
+            : Color(red: 0.935, green: 0.938, blue: 0.948)
+    }
+
+    static func cardFill(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.white.opacity(0.044)
+            : Color.white.opacity(0.92)
+    }
+
+    static func cardBorder(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.white.opacity(0.085)
+            : Color.black.opacity(0.075)
+    }
+
+    static func insetFill(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.black.opacity(0.24)
+            : Color.black.opacity(0.030)
+    }
+
+    static func insetBorder(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.white.opacity(0.065)
+            : Color.black.opacity(0.060)
+    }
+
+    static func divider(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.white.opacity(0.07)
+            : Color.black.opacity(0.065)
+    }
+
+    static func pillFill(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color.white.opacity(0.075)
+            : Color.black.opacity(0.055)
+    }
+}
+
 // MARK: - Tactile Button Styles
 
 /// Tactile press-scale button style for custom interactive surfaces (tiles, cards, rows).
@@ -72,7 +143,6 @@ struct EaveTactileButtonStyle: ButtonStyle {
 }
 
 /// Whisper-quiet obsidian icon button for Notch surfaces.
-/// Borderless at rest to avoid visual clutter; reveals a soft neutral halo on hover and crisp press-down.
 struct EaveNotchIconButton: View {
     let symbol: String
     let helpText: String
@@ -140,7 +210,7 @@ private struct EaveProminentButtonBody: View {
         if colorScheme == .dark {
             return Color.white.opacity(isHovered ? 0.98 : 0.90)
         } else {
-            return Color(red: 0.11, green: 0.115, blue: 0.125).opacity(isHovered ? 0.90 : 1.0)
+            return Color(red: 0.11, green: 0.115, blue: 0.125).opacity(isHovered ? 0.88 : 1.0)
         }
     }
 
@@ -153,8 +223,8 @@ private struct EaveProminentButtonBody: View {
         configuration.label
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(labelColor)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 6.5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 7.5, style: .continuous)
                     .fill(fillColor)
@@ -167,7 +237,7 @@ private struct EaveProminentButtonBody: View {
                     )
             )
             .shadow(
-                color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.10),
+                color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08),
                 radius: isHovered ? 4 : 2,
                 y: 1
             )
@@ -184,29 +254,37 @@ private struct EaveProminentButtonBody: View {
 
 /// Understated hairline-bordered neutral secondary button.
 struct EaveSecondaryButtonStyle: ButtonStyle {
+    var compact: Bool = false
+
     func makeBody(configuration: Configuration) -> some View {
-        EaveSecondaryButtonBody(configuration: configuration)
+        EaveSecondaryButtonBody(configuration: configuration, compact: compact)
     }
 }
 
 private struct EaveSecondaryButtonBody: View {
     let configuration: ButtonStyle.Configuration
+    let compact: Bool
     @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: compact ? 11 : 12, weight: .medium))
             .foregroundStyle(.primary.opacity(isEnabled ? (isHovered ? 1.0 : 0.82) : 0.35))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6.5)
+            .padding(.horizontal, compact ? 9 : 11.5)
+            .padding(.vertical, compact ? 4 : 6)
             .background(
-                RoundedRectangle(cornerRadius: 7.5, style: .continuous)
-                    .fill(Color.primary.opacity(isHovered ? 0.08 : 0.04))
+                RoundedRectangle(cornerRadius: compact ? 6 : 7.5, style: .continuous)
+                    .fill(
+                        colorScheme == .dark
+                            ? Color.white.opacity(isHovered ? 0.10 : 0.055)
+                            : Color.black.opacity(isHovered ? 0.065 : 0.032)
+                    )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 7.5, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(isHovered ? 0.16 : 0.10), lineWidth: 0.65)
+                RoundedRectangle(cornerRadius: compact ? 6 : 7.5, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isHovered ? 0.16 : 0.095), lineWidth: 0.65)
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
@@ -249,12 +327,13 @@ struct EaveKeycap: View {
     }
 }
 
-// MARK: - Editorial Settings Card & Row Primitives
+// MARK: - Editorial Settings Card & Nested Sub-Settings Primitives
 
 struct EaveSettingsCard<Content: View>: View {
     let title: String?
     let subtitle: String?
     @ViewBuilder let content: () -> Content
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         _ title: String? = nil,
@@ -279,21 +358,49 @@ struct EaveSettingsCard<Content: View>: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, 3)
             }
 
             VStack(alignment: .leading, spacing: 0) {
                 content()
             }
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(EavePalette.cardFill(colorScheme))
+                    .shadow(
+                        color: Color.black.opacity(colorScheme == .dark ? 0.0 : 0.035),
+                        radius: 2.5,
+                        y: 1
+                    )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.65)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
             )
         }
+    }
+}
+
+/// Recessed nested container for secondary / dependent settings beneath a parent toggle,
+/// giving unmistakable visual hierarchy without noisy flat dividers.
+struct EaveSettingsSubSection<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+                .fill(EavePalette.insetFill(colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8.5, style: .continuous)
+                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+        )
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
     }
 }
 
@@ -330,16 +437,140 @@ struct EaveSettingsToggleRow: View {
                 .controlSize(.small)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10.5)
+        .padding(.vertical, 11)
+    }
+}
+
+/// Precision slider row with aligned label, optional caption, and monospaced value badge.
+struct EaveSettingsSliderRow: View {
+    let title: String
+    let subtitle: String?
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let valueText: String
+    var inset: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(
+        _ title: String,
+        subtitle: String? = nil,
+        value: Binding<Double>,
+        in range: ClosedRange<Double>,
+        step: Double,
+        valueText: String,
+        inset: Bool = false
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self._value = value
+        self.range = range
+        self.step = step
+        self.valueText = valueText
+        self.inset = inset
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 1.5) {
+                    Text(title)
+                        .font(.system(size: inset ? 12.5 : 13, weight: .medium))
+                        .foregroundStyle(.primary.opacity(inset ? 0.90 : 1.0))
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                Text(valueText)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .foregroundStyle(.primary.opacity(0.78))
+                    .padding(.horizontal, 7.5)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        Capsule()
+                            .fill(EavePalette.pillFill(colorScheme))
+                    )
+            }
+
+            Slider(value: $value, in: range, step: step)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, inset ? 12 : 14)
+        .padding(.vertical, inset ? 9.5 : 10.5)
+    }
+}
+
+/// Clean segmented control row with uniform padding for both primary and nested secondary settings.
+struct EaveSettingsSegmentedRow<Selection: Hashable, OptionView: View>: View {
+    let title: String
+    let subtitle: String?
+    @Binding var selection: Selection
+    let pickerWidth: CGFloat
+    var inset: Bool = false
+    @ViewBuilder let options: () -> OptionView
+
+    init(
+        _ title: String,
+        subtitle: String? = nil,
+        selection: Binding<Selection>,
+        pickerWidth: CGFloat = 190,
+        inset: Bool = false,
+        @ViewBuilder options: @escaping () -> OptionView
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self._selection = selection
+        self.pickerWidth = pickerWidth
+        self.inset = inset
+        self.options = options
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: inset ? 12.5 : 13, weight: inset ? .medium : .regular))
+                    .foregroundStyle(.primary.opacity(inset ? 0.90 : 1.0))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 10)
+
+            Picker("", selection: $selection) {
+                options()
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(inset ? .small : .regular)
+            .frame(width: pickerWidth)
+        }
+        .padding(.horizontal, inset ? 12 : 14)
+        .padding(.vertical, inset ? 9.5 : 11)
     }
 }
 
 struct EaveCardDivider: View {
+    var leadingInset: CGFloat = 14
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.065))
+            .fill(EavePalette.divider(colorScheme))
             .frame(height: 0.65)
-            .padding(.leading, 14)
+            .padding(.leading, leadingInset)
     }
 }
 
@@ -348,14 +579,14 @@ struct EavePageHeader: View {
     let subtitle: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3.5) {
             Text(title)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 19, weight: .semibold))
                 .tracking(-0.3)
             Text(subtitle)
-                .font(.system(size: 12.5))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
-        .padding(.bottom, 6)
+        .padding(.bottom, 4)
     }
 }

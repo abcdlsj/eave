@@ -124,7 +124,6 @@ enum NotchState: Equatable, Sendable {
     case idle
     case ambient([AmbientIndicator])
     case peek(NotchAlert, expanded: Bool)
-    case bar
 }
 
 /// Mode requested by an external NotchBridge payload.

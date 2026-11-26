@@ -2,18 +2,10 @@ import SwiftUI
 
 /// Root SwiftUI surface hosted inside NotchPanel.
 /// Uses ONE persistent pure-black obsidian shell whose geometry and corner curves continuously morph
-/// with liquid-spring physics across `idle`, `ambient`, `peek`, and `bar` — zero neon rims, pure hardware cohesion.
+/// with liquid-spring physics across `idle`, `ambient`, and `peek` — zero neon rims, pure hardware cohesion.
 struct NotchContainerView: View {
     let stateMachine: NotchStateMachine
     let geometryProvider: () -> NotchGeometry
-    let capturedItemsProvider: () -> [CapturedMenuBarItem]
-    let activeBadgesProvider: () -> [String: String]
-    let isScanningProvider: () -> Bool
-
-    let onSelectBarItem: (MenuBarItemInfo) -> Void
-    let onRefreshBar: () -> Void
-    let onOpenSearch: () -> Void
-    let onOpenSettings: () -> Void
     let onAlertAction: (NotchAlert) -> Void
     let onAmbientAction: (AmbientIndicator) -> Void
 
@@ -88,24 +80,6 @@ struct NotchContainerView: View {
                 }
             )
             .transition(.opacity)
-
-        case .bar:
-            NotchBarView(
-                items: capturedItemsProvider(),
-                activeBadges: activeBadgesProvider(),
-                isLoading: isScanningProvider(),
-                notchWidth: baseW,
-                notchHeight: baseH,
-                onSelectItem: onSelectBarItem,
-                onRefresh: onRefreshBar,
-                onOpenSearch: onOpenSearch,
-                onOpenSettings: onOpenSettings,
-                onClose: {
-                    EaveHaptics.tick()
-                    stateMachine.closeBar()
-                }
-            )
-            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
         }
     }
 

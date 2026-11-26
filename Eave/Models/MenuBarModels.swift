@@ -6,15 +6,19 @@ import Foundation
 enum MenuBarSection: String, CaseIterable, Sendable, Codable {
     case visible
     case hidden
-    case alwaysHidden
 
     var displayName: String {
         switch self {
         case .visible: "Visible"
         case .hidden: "Hidden"
-        case .alwaysHidden: "Always Hidden"
         }
     }
+}
+
+/// Mouse button forwarded when interacting with a menu bar item tile.
+enum MenuBarClickButton: Equatable, Sendable {
+    case left
+    case right
 }
 
 /// How Eave presents hidden items when hovering over the Eave menu bar icon.
@@ -91,15 +95,6 @@ struct MenuBarItemInfo: Identifiable, Sendable, Equatable, Hashable {
     }
 }
 
-/// Display model combining discovered item metadata with an optional captured icon image.
-struct CapturedMenuBarItem: Identifiable {
-    let info: MenuBarItemInfo
-    let image: NSImage?
-    let isLiveCapture: Bool
-
-    var id: String { info.id }
-}
-
 /// Global macOS menu bar spacing preference values.
 struct MenuBarSpacingConfig: Equatable, Sendable {
     /// Value for `NSStatusItemSpacing` (`nil` means system default).
@@ -113,7 +108,6 @@ struct MenuBarSpacingConfig: Equatable, Sendable {
 /// Global keyboard actions supported by Eave.
 enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
     case toggleHidden
-    case toggleNotchBar
     case openSearch
 
     var id: String { rawValue }
@@ -121,7 +115,6 @@ enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .toggleHidden: "Toggle Hidden Section"
-        case .toggleNotchBar: "Toggle Notch Bar"
         case .openSearch: "Search Menu Bar Items"
         }
     }
@@ -131,9 +124,6 @@ enum HotKeyAction: String, CaseIterable, Identifiable, Sendable {
         case .toggleHidden:
             // Option + Command + H
             KeyCombo(keyCode: UInt32(kVK_ANSI_H), carbonModifiers: UInt32(optionKey | cmdKey))
-        case .toggleNotchBar:
-            // Option + Command + N
-            KeyCombo(keyCode: UInt32(kVK_ANSI_N), carbonModifiers: UInt32(optionKey | cmdKey))
         case .openSearch:
             // Option + Command + K
             KeyCombo(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: UInt32(optionKey | cmdKey))

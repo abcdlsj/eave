@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Single source of truth for Notch surface dimensions & corner geometry across all four states,
+/// Single source of truth for Notch surface dimensions & corner geometry across all states,
 /// keeping `NotchContainerView` morphing and `NotchPanelController` hit-testing mathematically locked.
 struct NotchSurfaceMetrics: Equatable {
     let width: CGFloat
@@ -58,16 +58,6 @@ struct NotchSurfaceMetrics: Equatable {
                     isVisible: true
                 )
             }
-        case .bar:
-            return NotchSurfaceMetrics(
-                width: 536,
-                height: max(baseH, 36) + 98,
-                topRadius: 14,
-                bottomRadius: 23,
-                shadowRadius: 20,
-                shadowOpacity: 0.38,
-                isVisible: true
-            )
         }
     }
 }
