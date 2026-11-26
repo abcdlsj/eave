@@ -156,7 +156,6 @@ struct OnboardingView: View {
                     let isPast = step.rawValue < currentStep.rawValue
                     Button {
                         if step != currentStep {
-                            EaveHaptics.tick()
                             withAnimation(EaveMotion.tabSwitch) {
                                 currentStep = step
                             }
@@ -222,7 +221,6 @@ struct OnboardingView: View {
                 Spacer(minLength: 8)
 
                 Button(coordinator.menuBarManager.isHiddenExpanded ? "Collapse Divider" : "Reveal Divider") {
-                    EaveHaptics.tap()
                     coordinator.menuBarManager.toggleHidden()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle())
@@ -317,7 +315,6 @@ struct OnboardingView: View {
         let isSelected = settings.hoverDisplayMode == mode
 
         return Button {
-            EaveHaptics.tick()
             withAnimation(EaveMotion.microSpring) {
                 settings.expandOnEaveHover = true
                 settings.hoverDisplayMode = mode
@@ -509,7 +506,6 @@ struct OnboardingView: View {
 
                     if !granted {
                         Button("Grant") {
-                            EaveHaptics.tap()
                             coordinator.permissions.requestAccessibilityPrompt()
                             coordinator.permissions.openAccessibilitySettings()
                         }
@@ -634,7 +630,6 @@ struct OnboardingView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        EaveHaptics.tap()
                         coordinator.signalHub.sendTestPeek()
                         withAnimation(EaveMotion.microSpring) {
                             previewSentFeedback = true
@@ -702,7 +697,6 @@ struct OnboardingView: View {
         HStack {
             if let prev = currentStep.previous {
                 Button("Back") {
-                    EaveHaptics.tick()
                     withAnimation(EaveMotion.tabSwitch) {
                         currentStep = prev
                     }
@@ -710,7 +704,6 @@ struct OnboardingView: View {
                 .buttonStyle(EaveSecondaryButtonStyle())
             } else {
                 Button("Skip") {
-                    EaveHaptics.tick()
                     onFinish()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle())
@@ -736,7 +729,6 @@ struct OnboardingView: View {
 
             if let next = currentStep.next {
                 Button {
-                    EaveHaptics.tick()
                     withAnimation(EaveMotion.tabSwitch) {
                         currentStep = next
                     }
@@ -751,7 +743,6 @@ struct OnboardingView: View {
                 .keyboardShortcut(.defaultAction)
             } else {
                 Button("Start Using Eave") {
-                    EaveHaptics.tap()
                     onFinish()
                 }
                 .buttonStyle(EaveProminentButtonStyle())

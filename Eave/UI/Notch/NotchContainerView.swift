@@ -125,7 +125,6 @@ struct NotchContainerView: View {
                 notchWidth: baseW,
                 notchHeight: baseH,
                 onTap: { indicator in
-                    EaveHaptics.tick()
                     onAmbientAction(indicator)
                 }
             )
@@ -137,7 +136,6 @@ struct NotchContainerView: View {
                 notchWidth: baseW,
                 notchHeight: baseH,
                 onPrimaryAction: {
-                    EaveHaptics.tick()
                     onAlertAction(alert)
                 }
             )

@@ -192,7 +192,6 @@ struct EaveNotchIconButton: View {
 
     var body: some View {
         Button {
-            EaveHaptics.tick()
             if spinOnClick {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.76)) {
                     spinCount += 1
@@ -283,9 +282,6 @@ private struct EaveProminentButtonBody: View {
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
             .animation(EaveMotion.hover, value: isHovered)
             .onHover { isHovered = $0 }
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { EaveHaptics.tick() }
-            }
     }
 }
 
@@ -333,9 +329,6 @@ private struct EaveSecondaryButtonBody: View {
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
             .animation(EaveMotion.hover, value: isHovered)
             .onHover { isHovered = $0 }
-            .onChange(of: configuration.isPressed) { _, pressed in
-                if pressed { EaveHaptics.tick() }
-            }
     }
 }
 
@@ -555,6 +548,10 @@ struct EaveSettingsSliderRow: View {
             .labelsHidden()
             .accessibilityValue(valueText)
             .controlSize(.small)
+            // The only haptic in Eave: a light detent tick as the slider snaps to each step.
+            .onChange(of: value) { oldValue, newValue in
+                if oldValue != newValue { EaveHaptics.tick() }
+            }
         }
         .padding(.horizontal, inset ? 12 : 14)
         .padding(.vertical, inset ? 9.5 : 10.5)

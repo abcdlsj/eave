@@ -96,7 +96,6 @@ struct SettingsView: View {
 
             // Quiet Accessibility status pill
             Button {
-                EaveHaptics.tick()
                 if coordinator.permissions.hasAccessibility {
                     coordinator.permissions.refresh()
                 } else {
@@ -158,7 +157,6 @@ struct SettingsView: View {
 
         return Button {
             if selectedTab != tab {
-                EaveHaptics.tick()
                 withAnimation(EaveMotion.tabSwitch) {
                     selectedTab = tab
                 }
@@ -262,7 +260,6 @@ private struct GeneralSettingsTab: View {
                 }
             }
             .onChange(of: settings.appearanceMode) { _, _ in
-                EaveHaptics.tick()
                 coordinator.applyAppearance()
             }
 
@@ -301,7 +298,6 @@ private struct GeneralSettingsTab: View {
                 Spacer(minLength: 8)
 
                 Button("Open Guide") {
-                    EaveHaptics.tick()
                     coordinator.openOnboardingWindow()
                 }
                 .buttonStyle(EaveSecondaryButtonStyle(compact: true))
@@ -345,7 +341,6 @@ private struct GeneralSettingsTab: View {
                 }
             }
             .onChange(of: settings.hoverDisplayMode) { _, _ in
-                EaveHaptics.tick()
                 coordinator.syncHoverSettings()
             }
 
@@ -385,7 +380,6 @@ private struct GeneralSettingsTab: View {
             }
         }
         .onChange(of: settings.secondRowLayoutMode) { _, _ in
-            EaveHaptics.tick()
             coordinator.syncHoverSettings()
         }
 
@@ -415,7 +409,6 @@ private struct GeneralSettingsTab: View {
     private var menuBarDensityCard: some View {
         EaveSettingsCard("Menu Bar Density") {
             Button {
-                EaveHaptics.tick()
                 withAnimation(EaveMotion.microSpring) {
                     showSpacingOptions.toggle()
                 }
@@ -485,7 +478,6 @@ private struct GeneralSettingsTab: View {
                         spacing: Int(spacingValue),
                         selectionPadding: Int(paddingValue)
                     )
-                    EaveHaptics.tap()
                     withAnimation(EaveMotion.microSpring) {
                         appliedFeedback = true
                     }
@@ -570,7 +562,6 @@ private struct GeneralSettingsTab: View {
 
                 if coordinator.permissions.hasAccessibility {
                     Button("Refresh") {
-                        EaveHaptics.tick()
                         coordinator.permissions.refresh()
                     }
                     .buttonStyle(EaveSecondaryButtonStyle(compact: true))
@@ -617,7 +608,6 @@ private struct GeneralSettingsTab: View {
                 Spacer()
 
                 Button {
-                    EaveHaptics.tick()
                     coordinator.showSecondRowBar(pinnedForPreview: true)
                 } label: {
                     HStack(spacing: 4) {
@@ -866,7 +856,6 @@ private struct NotchSettingsTab: View {
                 EaveCardDivider()
 
                 Button {
-                    EaveHaptics.tick()
                     withAnimation(EaveMotion.microSpring) {
                         showBridgeDetails.toggle()
                     }
@@ -1076,7 +1065,6 @@ private struct NotchSettingsTab: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        EaveHaptics.tap()
     }
 
     private func triggerCopied(_ flag: Binding<Bool>) {
@@ -1129,7 +1117,6 @@ private struct WatchedAppRow: View {
             Spacer()
 
             Button(role: .destructive) {
-                EaveHaptics.tick()
                 onRemove()
             } label: {
                 Image(systemName: "xmark")
@@ -1202,7 +1189,6 @@ private struct ShortcutsSettingsTab: View {
                 Button {
                     coordinator.settings.resetHotKeys()
                     coordinator.hotKeyManager.register(settings: coordinator.settings)
-                    EaveHaptics.tap()
                     withAnimation(EaveMotion.microSpring) {
                         restoredFeedback = true
                     }

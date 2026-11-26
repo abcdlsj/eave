@@ -16,7 +16,6 @@ struct HotKeyRecorderView: View {
     var body: some View {
         HStack(spacing: 7) {
             Button {
-                EaveHaptics.tick()
                 if isRecording {
                     stopRecording()
                 } else {
@@ -79,7 +78,6 @@ struct HotKeyRecorderView: View {
 
             if combo != nil && !isRecording {
                 Button {
-                    EaveHaptics.tick()
                     stopRecording()
                     onChange(nil)
                 } label: {
@@ -155,7 +153,6 @@ struct HotKeyRecorderView: View {
                 return nil
             }
             let recorded = KeyCombo(keyCode: event.keyCode, modifierFlags: modifiers)
-            EaveHaptics.tap()
             stopRecording()
             onChange(recorded)
             return nil

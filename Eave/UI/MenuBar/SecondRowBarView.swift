@@ -249,7 +249,6 @@ struct SecondRowBarView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Button("Grant") {
-                    EaveHaptics.tick()
                     controller.hide()
                     controller.onRequestPermissions?()
                 }
@@ -307,7 +306,6 @@ struct SecondRowBarView: View {
                                 }
                             },
                             onSelect: { button in
-                                EaveHaptics.tick()
                                 controller.selectItem(item, button: button)
                             }
                         )
@@ -379,7 +377,6 @@ struct SecondRowBarView: View {
                                 }
                             },
                             onSelect: { button in
-                                EaveHaptics.tick()
                                 controller.selectItem(item, button: button)
                             }
                         )

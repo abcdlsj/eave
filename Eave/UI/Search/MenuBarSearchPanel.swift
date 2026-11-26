@@ -141,7 +141,6 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         }
 
         installKeyMonitor()
-        EaveHaptics.tick()
 
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isVisible else { return }
@@ -190,13 +189,11 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
         let items = filteredItems
         guard items.indices.contains(selectedIndex) else { return }
         let chosen = items[selectedIndex]
-        EaveHaptics.tick()
         close()
         onSelectItem?(chosen)
     }
 
     func select(_ info: MenuBarItemInfo) {
-        EaveHaptics.tick()
         close()
         onSelectItem?(info)
     }
@@ -227,7 +224,6 @@ final class MenuBarSearchController: NSObject, NSWindowDelegate {
                 self.close(restoringFocus: true)
                 return nil
             case 48: // Tab cycles section filter
-                EaveHaptics.tick()
                 withAnimation(EaveMotion.microSpring) {
                     self.sectionFilter = self.sectionFilter.next
                 }
@@ -289,7 +285,6 @@ struct MenuBarSearchView: View {
 
                 if !controller.query.isEmpty {
                     Button {
-                        EaveHaptics.tick()
                         withAnimation(EaveMotion.hover) {
                             controller.query = ""
                         }
@@ -415,7 +410,6 @@ struct MenuBarSearchView: View {
         let count = controller.count(for: filter)
 
         return Button {
-            EaveHaptics.tick()
             withAnimation(EaveMotion.microSpring) {
                 controller.sectionFilter = filter
             }
