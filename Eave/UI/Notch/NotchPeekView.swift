@@ -51,6 +51,22 @@ struct NotchPeekView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.97, pressedOpacity: 0.90))
+        .accessibilityLabel(
+            NotchAccessibility.label(
+                bundleIdentifier: alert.bundleIdentifier,
+                source: alert.source,
+                badge: alert.badge,
+                isOngoing: false,
+                style: alert.style
+            )
+        )
+        .accessibilityHint(
+            NotchAccessibility.hint(
+                bundleIdentifier: alert.bundleIdentifier,
+                source: alert.source,
+                hasURL: alert.targetURL != nil
+            )
+        )
         .onHover { hovering in
             withAnimation(EaveMotion.hover) {
                 isHovered = hovering
@@ -148,6 +164,47 @@ struct NotchPeekView: View {
                     .scaleEffect(isHovered && !reduceMotion ? 1.18 : 1.0)
             }
         }
+    }
+}
+
+/// Spoken VoiceOver descriptions for textless Notch wings.
+@MainActor
+enum NotchAccessibility {
+    static func sourceName(bundleIdentifier: String?, source: NotchAlertSource) -> String {
+        if let bundleIdentifier,
+           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        switch source {
+        case .dockBadge, .menuBarAX: return "App"
+        case .bridge: return "Script"
+        case .system: return "Eave"
+        }
+    }
+
+    static func label(
+        bundleIdentifier: String?,
+        source: NotchAlertSource,
+        badge: String?,
+        isOngoing: Bool,
+        style: NotchSignalStyle
+    ) -> String {
+        let name = sourceName(bundleIdentifier: bundleIdentifier, source: source)
+        if let badge, !badge.isEmpty {
+            return "\(name) notification, \(badge) new"
+        }
+        if isOngoing {
+            return style == .wave ? "\(name) activity in progress" : "\(name) ongoing signal"
+        }
+        return "\(name) notification"
+    }
+
+    static func hint(bundleIdentifier: String?, source: NotchAlertSource, hasURL: Bool) -> String {
+        if hasURL { return "Opens the linked page." }
+        if bundleIdentifier != nil {
+            return "Opens \(sourceName(bundleIdentifier: bundleIdentifier, source: source))."
+        }
+        return "Dismisses the alert."
     }
 }
 

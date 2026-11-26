@@ -447,7 +447,9 @@ private struct SecondRowItemTile: View {
         .onHover { hovering in
             onHoverChanged(hovering)
         }
-        .accessibilityLabel(item.searchableText)
+        .accessibilityLabel(badge.map { "\(item.searchableText), \($0) new" } ?? item.searchableText)
+        .accessibilityHint("Double-tap to open. Use the actions menu for a right-click.")
+        .accessibilityAction(named: "Right-click") { onSelect(.right) }
     }
 
     @ViewBuilder

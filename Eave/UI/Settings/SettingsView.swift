@@ -1139,6 +1139,8 @@ private struct WatchedAppRow: View {
                     .background(Circle().fill(Color.primary.opacity(isHovered ? 0.08 : 0.0)))
             }
             .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.88))
+            .accessibilityLabel("Stop watching \(appName)")
+            .help("Stop watching \(appName)")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8.5)

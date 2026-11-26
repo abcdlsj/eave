@@ -267,6 +267,7 @@ struct MenuBarSearchView: View {
                             .foregroundStyle(.secondary.opacity(0.75))
                     }
                     .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.86))
+                    .accessibilityLabel("Clear search")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }

@@ -218,6 +218,7 @@ struct EaveNotchIconButton: View {
             }
         }
         .help(helpText)
+        .accessibilityLabel(helpText)
     }
 }
 
@@ -479,7 +480,7 @@ struct EaveSettingsToggleRow: View {
 
             Spacer(minLength: 8)
 
-            Toggle("", isOn: $isOn)
+            Toggle(title, isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -548,8 +549,12 @@ struct EaveSettingsSliderRow: View {
                     )
             }
 
-            Slider(value: $value, in: range, step: step)
-                .controlSize(.small)
+            Slider(value: $value, in: range, step: step) {
+                Text(title)
+            }
+            .labelsHidden()
+            .accessibilityValue(valueText)
+            .controlSize(.small)
         }
         .padding(.horizontal, inset ? 12 : 14)
         .padding(.vertical, inset ? 9.5 : 10.5)
@@ -597,7 +602,7 @@ struct EaveSettingsSegmentedRow<Selection: Hashable, OptionView: View>: View {
 
             Spacer(minLength: 10)
 
-            Picker("", selection: $selection) {
+            Picker(title, selection: $selection) {
                 options()
             }
             .labelsHidden()

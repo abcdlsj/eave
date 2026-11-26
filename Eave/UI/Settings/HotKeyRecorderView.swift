@@ -69,6 +69,8 @@ struct HotKeyRecorderView: View {
                 )
             }
             .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.97))
+            .accessibilityLabel(recorderAccessibilityLabel)
+            .accessibilityHint(isRecording ? "Press a key combination, or Escape to cancel." : "Records a new shortcut.")
             .onHover { hovering in
                 withAnimation(EaveMotion.hover) {
                     isHovered = hovering
@@ -90,6 +92,7 @@ struct HotKeyRecorderView: View {
                 }
                 .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.88))
                 .help("Clear Shortcut")
+                .accessibilityLabel("Clear shortcut")
                 .transition(.opacity)
             }
         }
@@ -97,6 +100,29 @@ struct HotKeyRecorderView: View {
         .onDisappear {
             stopRecording()
         }
+    }
+
+    private var recorderAccessibilityLabel: String {
+        if isRecording { return "Recording shortcut" }
+        guard let combo else { return "Record shortcut" }
+        return "Shortcut: " + Self.spokenTokens(for: combo).joined(separator: " ")
+    }
+
+    /// VoiceOver-friendly words for a combo, e.g. "Option Command H".
+    static func spokenTokens(for combo: KeyCombo) -> [String] {
+        var words: [String] = []
+        if combo.carbonModifiers & UInt32(controlKey) != 0 { words.append("Control") }
+        if combo.carbonModifiers & UInt32(optionKey) != 0 { words.append("Option") }
+        if combo.carbonModifiers & UInt32(shiftKey) != 0 { words.append("Shift") }
+        if combo.carbonModifiers & UInt32(cmdKey) != 0 { words.append("Command") }
+        let key = KeyCombo.keyLabel(for: combo.keyCode)
+        let spokenKeys: [String: String] = [
+            "↩": "Return", "⎋": "Escape", "⇥": "Tab", "⌫": "Delete",
+            "/": "Slash", ".": "Period", ",": "Comma", "-": "Minus", "=": "Equals",
+            "[": "Left Bracket", "]": "Right Bracket"
+        ]
+        words.append(spokenKeys[key] ?? key)
+        return words
     }
 
     private func keyTokens(for combo: KeyCombo) -> [String] {

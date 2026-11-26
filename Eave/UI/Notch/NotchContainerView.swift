@@ -281,6 +281,22 @@ private struct NotchAmbientWingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.97, pressedOpacity: 0.90))
+        .accessibilityLabel(
+            NotchAccessibility.label(
+                bundleIdentifier: primary?.bundleIdentifier,
+                source: primary?.source ?? .bridge,
+                badge: primary?.badge,
+                isOngoing: true,
+                style: primary?.style ?? .dot
+            )
+        )
+        .accessibilityHint(
+            primary.map {
+                ($0.targetURL != nil || $0.bundleIdentifier != nil)
+                    ? NotchAccessibility.hint(bundleIdentifier: $0.bundleIdentifier, source: $0.source, hasURL: $0.targetURL != nil)
+                    : ""
+            } ?? ""
+        )
         .onHover { hovering in
             withAnimation(EaveMotion.hover) {
                 isHovered = hovering
