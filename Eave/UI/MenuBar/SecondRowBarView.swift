@@ -382,6 +382,7 @@ private struct SecondRowItemTile: View {
     let onSelect: (MenuBarClickButton) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isRightPressed = false
 
     private var hoverFillColor: Color {
@@ -419,8 +420,8 @@ private struct SecondRowItemTile: View {
                 .padding(.top, 2)
 
                 Text(item.appName)
-                    .font(.system(size: 9.5, weight: magnification.isPrimary ? .medium : .regular))
-                    .foregroundStyle(.primary.opacity(magnification.isPrimary ? 0.96 : 0.68))
+                    .font(.system(size: 10, weight: magnification.isPrimary ? .medium : .regular))
+                    .foregroundStyle(.primary.opacity(magnification.isPrimary || contrast == .increased ? 1.0 : 0.86))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: width - 6)

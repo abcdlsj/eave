@@ -123,8 +123,11 @@ enum EavePalette {
             : Color.white.opacity(0.92)
     }
 
-    static func cardBorder(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func cardBorder(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        if contrast == .increased {
+            return scheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.22)
+        }
+        return scheme == .dark
             ? Color.white.opacity(0.085)
             : Color.black.opacity(0.075)
     }
@@ -135,14 +138,20 @@ enum EavePalette {
             : Color.black.opacity(0.030)
     }
 
-    static func insetBorder(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func insetBorder(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        if contrast == .increased {
+            return scheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.20)
+        }
+        return scheme == .dark
             ? Color.white.opacity(0.065)
             : Color.black.opacity(0.060)
     }
 
-    static func divider(_ scheme: ColorScheme) -> Color {
-        scheme == .dark
+    static func divider(_ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard) -> Color {
+        if contrast == .increased {
+            return scheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.20)
+        }
+        return scheme == .dark
             ? Color.white.opacity(0.07)
             : Color.black.opacity(0.065)
     }
@@ -294,6 +303,12 @@ private struct EaveSecondaryButtonBody: View {
     @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var strokeOpacity: Double {
+        if contrast == .increased { return isHovered ? 0.36 : 0.28 }
+        return isHovered ? 0.16 : 0.095
+    }
 
     var body: some View {
         configuration.label
@@ -311,7 +326,7 @@ private struct EaveSecondaryButtonBody: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: compact ? 6 : 7.5, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(isHovered ? 0.16 : 0.095), lineWidth: 0.65)
+                    .strokeBorder(Color.primary.opacity(strokeOpacity), lineWidth: 0.65)
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(EaveMotion.pressSpring, value: configuration.isPressed)
@@ -332,11 +347,13 @@ struct EaveKeycap: View {
     var horizontalPadding: CGFloat = 5.5
     var verticalPadding: CGFloat = 2.5
     var isDarkSurface: Bool = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
+        let isIncreased = contrast == .increased
         Text(label)
             .font(.system(size: fontSize, weight: .medium, design: .rounded))
-            .foregroundStyle(isDarkSurface ? Color.white.opacity(0.76) : Color.primary.opacity(0.72))
+            .foregroundStyle(isDarkSurface ? Color.white.opacity(isIncreased ? 0.92 : 0.76) : Color.primary.opacity(isIncreased ? 0.90 : 0.72))
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
             .frame(minWidth: fontSize * 1.85)
@@ -347,7 +364,9 @@ struct EaveKeycap: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .strokeBorder(
-                        isDarkSurface ? Color.white.opacity(0.14) : Color.primary.opacity(0.12),
+                        isDarkSurface
+                            ? Color.white.opacity(isIncreased ? 0.32 : 0.14)
+                            : Color.primary.opacity(isIncreased ? 0.30 : 0.12),
                         lineWidth: 0.55
                     )
             )
@@ -361,6 +380,7 @@ struct EaveSettingsCard<Content: View>: View {
     let subtitle: String?
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     init(
         _ title: String? = nil,
@@ -382,7 +402,7 @@ struct EaveSettingsCard<Content: View>: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(contrast == .increased ? .secondary : .tertiary)
                     }
                 }
                 .padding(.horizontal, 3)
@@ -402,7 +422,7 @@ struct EaveSettingsCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.65)
+                    .strokeBorder(EavePalette.cardBorder(colorScheme, contrast: contrast), lineWidth: 0.65)
             )
         }
     }
@@ -413,6 +433,7 @@ struct EaveSettingsCard<Content: View>: View {
 struct EaveSettingsSubSection<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -424,7 +445,7 @@ struct EaveSettingsSubSection<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                .strokeBorder(EavePalette.insetBorder(colorScheme), lineWidth: 0.6)
+                .strokeBorder(EavePalette.insetBorder(colorScheme, contrast: contrast), lineWidth: 0.6)
         )
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
@@ -592,10 +613,11 @@ struct EaveSettingsSegmentedRow<Selection: Hashable, OptionView: View>: View {
 struct EaveCardDivider: View {
     var leadingInset: CGFloat = 14
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Rectangle()
-            .fill(EavePalette.divider(colorScheme))
+            .fill(EavePalette.divider(colorScheme, contrast: contrast))
             .frame(height: 0.65)
             .padding(.leading, leadingInset)
     }
