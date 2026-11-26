@@ -41,7 +41,17 @@ struct NotchContainerView: View {
             .animation(stateAnimation, value: stateMachine.state)
             .onChange(of: stateMachine.state) { _, newState in
                 if case .peek(let alert) = newState {
-                    triggerRimSweep(for: alert)
+                    triggerRimSweep(accentHex: alert.accentHex, source: alert.source)
+                } else if case .ambient(let indicators) = newState, let primary = indicators.last, primary.loop {
+                    triggerRimSweep(accentHex: primary.accentHex, source: primary.source)
+                }
+            }
+            .task(id: rimLoopIdentity) {
+                guard let config = activeLoopedRimConfig else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 2_200_000_000)
+                    guard !Task.isCancelled else { break }
+                    triggerRimSweep(accentHex: config.accentHex, source: config.source)
                 }
             }
 
@@ -50,11 +60,39 @@ struct NotchContainerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// Fires a single restrained 0.72s accent light sweep along the lower notch perimeter on peek arrival.
-    private func triggerRimSweep(for alert: NotchAlert) {
-        if let hex = alert.accentHex, !hex.isEmpty {
+    private var activeLoopedRimConfig: (accentHex: String?, source: NotchAlertSource)? {
+        switch stateMachine.state {
+        case .peek(let alert) where alert.loop:
+            return (alert.accentHex, alert.source)
+        case .ambient(let indicators):
+            if let primary = indicators.last, primary.loop {
+                return (primary.accentHex, primary.source)
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private var rimLoopIdentity: String {
+        switch stateMachine.state {
+        case .peek(let alert) where alert.loop:
+            return "peek.\(alert.id).\(alert.timestamp.timeIntervalSince1970)"
+        case .ambient(let indicators):
+            if let primary = indicators.last, primary.loop {
+                return "ambient.\(primary.id).\(primary.accentHex ?? "")"
+            }
+            return "none"
+        default:
+            return "none"
+        }
+    }
+
+    /// Fires a restrained 0.72s accent light sweep along the lower notch perimeter.
+    private func triggerRimSweep(accentHex: String?, source: NotchAlertSource) {
+        if let hex = accentHex, !hex.isEmpty {
             rimSweepColor = Color(eaveHex: hex)
-        } else if alert.source == .dockBadge {
+        } else if source == .dockBadge {
             rimSweepColor = Color(red: 1.0, green: 0.27, blue: 0.23)
         } else {
             rimSweepColor = Color.white.opacity(0.85)
@@ -197,6 +235,8 @@ private struct NotchAmbientWingsView: View {
 
     @State private var isHovered = false
     @State private var breathe = false
+    @State private var rippleScale: CGFloat = 1.0
+    @State private var rippleOpacity: Double = 0.0
 
     private var primary: AmbientIndicator? { indicators.last }
 
@@ -248,6 +288,18 @@ private struct NotchAmbientWingsView: View {
                 breathe = true
             }
         }
+        .task(id: "\(primary?.id ?? "")-\(primary?.loop ?? false)-\(primary?.style.rawValue ?? "")") {
+            guard let primary, primary.loop, primary.badge == nil, primary.style == .dot else { return }
+            while !Task.isCancelled {
+                rippleScale = 1.0
+                rippleOpacity = 0.60
+                withAnimation(.easeOut(duration: 0.72)) {
+                    rippleScale = 2.4
+                    rippleOpacity = 0.0
+                }
+                try? await Task.sleep(nanoseconds: 2_200_000_000)
+            }
+        }
     }
 
     @ViewBuilder
@@ -289,13 +341,22 @@ private struct NotchAmbientWingsView: View {
             NotchWaveBarsView(color: accentColor)
                 .scaleEffect(isHovered ? 1.12 : 1.0)
         } else {
-            // No badge provided -> quiet breathing accent dot, never forces a number.
-            Circle()
-                .fill(accentColor)
-                .frame(width: 5.5, height: 5.5)
-                .shadow(color: accentColor.opacity(breathe ? 0.45 : 0.12), radius: breathe ? 3 : 1)
-                .opacity(breathe ? 1.0 : 0.62)
-                .scaleEffect(isHovered ? 1.18 : 1.0)
+            // No badge provided -> quiet breathing accent dot (plus optional looped sonar ping).
+            ZStack {
+                if rippleOpacity > 0.01 {
+                    Circle()
+                        .stroke(accentColor.opacity(rippleOpacity), lineWidth: 0.95)
+                        .frame(width: 5.5, height: 5.5)
+                        .scaleEffect(rippleScale)
+                }
+
+                Circle()
+                    .fill(accentColor)
+                    .frame(width: 5.5, height: 5.5)
+                    .shadow(color: accentColor.opacity(breathe ? 0.45 : 0.12), radius: breathe ? 3 : 1)
+                    .opacity(breathe ? 1.0 : 0.62)
+                    .scaleEffect(isHovered ? 1.18 : 1.0)
+            }
         }
     }
 }

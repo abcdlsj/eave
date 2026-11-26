@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Lightweight CLI bridge to send a textless Notch signal (icon + accent dot/wave or optional numeric badge + callback URL) to Eave.
+# Lightweight CLI bridge to send a textless Notch signal to Eave.
 # Examples:
-#   ./scripts/eave-notify --id agent --mode ambient --style wave --symbol sparkles --accent "#38BDF8"
-#   ./scripts/eave-notify --id agent --symbol checkmark.circle.fill --accent "#34C759" --url "eave://settings"
+#   ./scripts/eave-notify --id agent --mode ambient --style wave --symbol sparkles --accent "#38BDF8" --duration 60
+#   ./scripts/eave-notify --id agent --symbol checkmark.circle.fill --accent "#34C759" --duration 8 --loop --url "eave://settings"
 #   ./scripts/eave-notify --id inbox --icon /path/to/icon.png --badge 3 --accent "#FF453A" --url "sumi://inbox"
 #   ./scripts/eave-notify --id agent --mode clear
 
@@ -12,8 +12,9 @@ ICON=""
 SYMBOL=""
 BADGE=""
 STYLE=""
+LOOP=""
 ACCENT=""
-DURATION="4.5"
+DURATION=""
 MODE="peek"
 ID=""
 BUNDLE_ID=""
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
     --symbol) SYMBOL="$2"; shift 2 ;;
     --badge) BADGE="$2"; shift 2 ;;
     --style) STYLE="$2"; shift 2 ;;
+    --loop) LOOP="true"; shift 1 ;;
     --accent) ACCENT="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --mode) MODE="$2"; shift 2 ;;
@@ -32,16 +34,16 @@ while [[ $# -gt 0 ]]; do
     --bundle-id) BUNDLE_ID="$2"; shift 2 ;;
     --url) TARGET_URL="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: eave-notify [--icon <local-image-path>] [--symbol <sf-symbol>] [--bundle-id <id>] [--accent <#RRGGBB>] [--badge <number>] [--style dot|wave] [--url <callback-url>] [--duration <sec>] [--mode peek|ambient|clear] [--id <key>]"
+      echo "Usage: eave-notify [--icon <local-image-path>] [--symbol <sf-symbol>] [--bundle-id <id>] [--accent <#RRGGBB>] [--badge <number>] [--style dot|wave] [--loop] [--url <callback-url>] [--duration <sec>] [--mode peek|ambient|clear] [--id <key>]"
       exit 0
       ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
 
-QUERY=$(python3 - "$ICON" "$SYMBOL" "$BADGE" "$STYLE" "$ACCENT" "$DURATION" "$MODE" "$ID" "$BUNDLE_ID" "$TARGET_URL" <<'PY'
+QUERY=$(python3 - "$ICON" "$SYMBOL" "$BADGE" "$STYLE" "$LOOP" "$ACCENT" "$DURATION" "$MODE" "$ID" "$BUNDLE_ID" "$TARGET_URL" <<'PY'
 import sys, urllib.parse
-keys = ["icon", "symbol", "badge", "style", "accent", "duration", "mode", "id", "bundleID", "url"]
+keys = ["icon", "symbol", "badge", "style", "loop", "accent", "duration", "mode", "id", "bundleID", "url"]
 params = [(k, v) for k, v in zip(keys, sys.argv[1:]) if v]
 print(urllib.parse.urlencode(params, quote_via=urllib.parse.quote))
 PY

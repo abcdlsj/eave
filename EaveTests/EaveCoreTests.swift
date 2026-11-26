@@ -110,9 +110,9 @@ final class EaveCoreTests: XCTestCase {
     // MARK: - BridgePayload Parsing Tests
 
     func testBridgeURLParsing() throws {
-        // Textless signal with custom local icon, accent hex, numeric badge, and callback URL.
+        // Textless signal with custom local icon, accent hex, numeric badge, loop, and callback URL.
         let url = try XCTUnwrap(
-            URL(string: "eave://notify?id=job1&icon=/tmp/my+icon.png&symbol=sparkles&accent=%2334C759&badge=12&url=sumi://inbox&duration=99")
+            URL(string: "eave://notify?id=job1&icon=/tmp/my+icon.png&symbol=sparkles&accent=%2334C759&badge=12&loop=true&url=sumi://inbox&duration=999")
         )
         let payload = try XCTUnwrap(BridgePayload.parse(url: url))
 
@@ -122,13 +122,16 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(payload.symbolName, "sparkles")
         XCTAssertEqual(payload.accentHex, "#34C759")
         XCTAssertEqual(payload.badge, "12")
+        XCTAssertTrue(payload.loop)
         XCTAssertEqual(payload.targetURL?.absoluteString, "sumi://inbox")
-        XCTAssertEqual(payload.duration, 30.0) // Clamped to max 30s.
+        XCTAssertEqual(payload.duration, 300.0) // Clamped to max 300s.
 
         // Non-numeric text badges are stripped so Notch never renders arbitrary text.
         let textBadgeURL = try XCTUnwrap(URL(string: "eave://notify?id=dot1&badge=OK&accent=%2338BDF8"))
         let textBadgePayload = try XCTUnwrap(BridgePayload.parse(url: textBadgeURL))
         XCTAssertNil(textBadgePayload.badge)
+        XCTAssertFalse(textBadgePayload.loop)
+        XCTAssertNil(textBadgePayload.duration)
         XCTAssertEqual(textBadgePayload.accentHex, "#38BDF8")
 
         // Numeric overflow count like "99+" is allowed; omitted badge remains nil (dot-only).
@@ -136,11 +139,12 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertNil(BridgePayload.sanitizedNumericBadge("hello"))
         XCTAssertNil(BridgePayload.sanitizedNumericBadge("+"))
 
-        // Optional activity wave style
-        let waveURL = try XCTUnwrap(URL(string: "eave://notify?id=agent&mode=ambient&style=wave&symbol=sparkles&accent=%2338BDF8"))
+        // Optional activity wave style + explicit ambient expiry duration
+        let waveURL = try XCTUnwrap(URL(string: "eave://notify?id=agent&mode=ambient&style=wave&symbol=sparkles&accent=%2338BDF8&duration=45"))
         let wavePayload = try XCTUnwrap(BridgePayload.parse(url: waveURL))
         XCTAssertEqual(wavePayload.mode, .ambient)
         XCTAssertEqual(wavePayload.style, .wave)
+        XCTAssertEqual(wavePayload.duration, 45.0)
         XCTAssertNil(wavePayload.badge)
 
         let clearURL = try XCTUnwrap(URL(string: "eave://clear?id=job1"))

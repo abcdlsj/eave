@@ -59,7 +59,7 @@ struct NotchGeometry: Equatable, Sendable {
 }
 
 /// Origin of a Notch alert or ambient indicator.
-enum NotchAlertSource: String, Sendable, Codable {
+enum NotchAlertSource: String, Sendable, Equatable, Codable {
     case dockBadge
     case menuBarAX
     case bridge
@@ -68,7 +68,7 @@ enum NotchAlertSource: String, Sendable, Codable {
 
 /// Visual style for a textless Notch right-wing indicator when no numeric badge is provided.
 enum NotchSignalStyle: String, Sendable, Equatable, Codable {
-    /// Quiet accent dot (default; one-shot sonar ping on peek arrival).
+    /// Quiet accent dot (default; one-shot or looped sonar ping).
     case dot
     /// Minimal 3-bar breathing wave for active background work (e.g. AI agents, builds).
     case wave
@@ -82,6 +82,8 @@ struct NotchAlert: Identifiable, Equatable, Sendable {
     let badge: String?
     /// Visual style when `badge` is nil (defaults to `.dot`).
     let style: NotchSignalStyle
+    /// When true, gently repeats the rim shimmer and sonar ping while the alert stays visible.
+    let loop: Bool
     /// Optional local image file path for custom sender icon.
     let iconPath: String?
     /// Optional SF Symbol name.
@@ -100,6 +102,7 @@ struct NotchAlert: Identifiable, Equatable, Sendable {
         source: NotchAlertSource,
         badge: String? = nil,
         style: NotchSignalStyle = .dot,
+        loop: Bool = false,
         iconPath: String? = nil,
         symbolName: String? = nil,
         accentHex: String? = nil,
@@ -112,12 +115,13 @@ struct NotchAlert: Identifiable, Equatable, Sendable {
         self.source = source
         self.badge = BridgePayload.sanitizedNumericBadge(badge)
         self.style = style
+        self.loop = loop
         self.iconPath = iconPath
         self.symbolName = symbolName
         self.accentHex = accentHex
         self.bundleIdentifier = bundleIdentifier
         self.targetURL = targetURL
-        self.duration = max(1.5, min(duration, 30.0))
+        self.duration = max(1.0, min(duration, 300.0))
         self.timestamp = timestamp
     }
 }
@@ -128,32 +132,40 @@ struct AmbientIndicator: Identifiable, Equatable, Sendable {
     let source: NotchAlertSource
     let badge: String?
     let style: NotchSignalStyle
+    /// When true, repeats the subtle rim shimmer and sonar ping periodically while active.
+    let loop: Bool
     let iconPath: String?
     let symbolName: String?
     let accentHex: String?
     let bundleIdentifier: String?
     let targetURL: URL?
+    /// Optional auto-expiry time in seconds (`nil` persists until explicitly cleared).
+    let duration: TimeInterval?
 
     init(
         id: String,
         source: NotchAlertSource,
         badge: String? = nil,
         style: NotchSignalStyle = .dot,
+        loop: Bool = false,
         iconPath: String? = nil,
         symbolName: String? = nil,
         accentHex: String? = nil,
         bundleIdentifier: String? = nil,
-        targetURL: URL? = nil
+        targetURL: URL? = nil,
+        duration: TimeInterval? = nil
     ) {
         self.id = id
         self.source = source
         self.badge = BridgePayload.sanitizedNumericBadge(badge)
         self.style = style
+        self.loop = loop
         self.iconPath = iconPath
         self.symbolName = symbolName
         self.accentHex = accentHex
         self.bundleIdentifier = bundleIdentifier
         self.targetURL = targetURL
+        self.duration = duration.map { max(1.0, min($0, 300.0)) }
     }
 }
 
@@ -173,18 +185,20 @@ enum BridgeMode: String, Sendable, Equatable {
 
 /// Parsed textless payload from URL Scheme (`eave://notify?...`) or DistributedNotification.
 /// Accepts only icon (`icon` / `symbol` / `bundleID`), callback (`url`), accent color (`accent`),
-/// optional numeric badge (`badge`), duration, mode, and id. Text fields are intentionally ignored.
+/// optional numeric badge (`badge`), visual style (`style`), effect looping (`loop`), duration, mode, and id.
 struct BridgePayload: Equatable, Sendable {
     let id: String
     let mode: BridgeMode
     let badge: String?
     let style: NotchSignalStyle
+    let loop: Bool
     let iconPath: String?
     let symbolName: String?
     let accentHex: String?
     let bundleIdentifier: String?
     let targetURL: URL?
-    let duration: TimeInterval
+    /// Explicit duration in seconds (`nil` uses default 4.5s for peek, or persistent until clear for ambient).
+    let duration: TimeInterval?
 
     /// Enforces strictly numeric badges (e.g. "1", "24", "99+") so arbitrary text cannot appear in the Notch.
     static func sanitizedNumericBadge(_ raw: String?) -> String? {
@@ -204,6 +218,14 @@ struct BridgePayload: Equatable, Sendable {
             }
         }
         return hasDigit ? trimmed : nil
+    }
+
+    private static func parseBool(_ raw: String?) -> Bool {
+        guard let raw else { return false }
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on": return true
+        default: return false
+        }
     }
 
     /// Parses an `eave://notify?...` or `eave://clear?...` URL.
@@ -235,21 +257,24 @@ struct BridgePayload: Equatable, Sendable {
         }
 
         let id = items["id"] ?? items["bundleid"] ?? UUID().uuidString
-        let duration = items["duration"].flatMap(Double.init) ?? 4.5
+        let rawDuration = items["duration"].flatMap(Double.init)
+        let clampedDuration = rawDuration.map { max(1.0, min($0, 300.0)) }
         let targetURL = items["url"].flatMap(URL.init(string:))
         let style = items["style"].flatMap { NotchSignalStyle(rawValue: $0.lowercased()) } ?? .dot
+        let loop = parseBool(items["loop"])
 
         return BridgePayload(
             id: id,
             mode: mode,
             badge: sanitizedNumericBadge(items["badge"]),
             style: style,
+            loop: loop,
             iconPath: items["icon"],
             symbolName: items["symbol"],
             accentHex: items["accent"],
             bundleIdentifier: items["bundleid"],
             targetURL: targetURL,
-            duration: max(1.5, min(duration, 30.0))
+            duration: clampedDuration
         )
     }
 
@@ -266,26 +291,35 @@ struct BridgePayload: Equatable, Sendable {
         let id = string("id") ?? string("bundleID") ?? string("bundleId") ?? UUID().uuidString
         let style = string("style").flatMap { NotchSignalStyle(rawValue: $0.lowercased()) } ?? .dot
 
-        let duration: TimeInterval
-        if let num = userInfo["duration"] as? Double {
-            duration = num
-        } else if let str = string("duration"), let num = Double(str) {
-            duration = num
+        let loop: Bool
+        if let flag = userInfo["loop"] as? Bool {
+            loop = flag
         } else {
-            duration = 4.5
+            loop = parseBool(string("loop"))
         }
+
+        let rawDuration: Double?
+        if let num = userInfo["duration"] as? Double {
+            rawDuration = num
+        } else if let str = string("duration"), let num = Double(str) {
+            rawDuration = num
+        } else {
+            rawDuration = nil
+        }
+        let clampedDuration = rawDuration.map { max(1.0, min($0, 300.0)) }
 
         return BridgePayload(
             id: id,
             mode: mode,
             badge: sanitizedNumericBadge(string("badge")),
             style: style,
+            loop: loop,
             iconPath: string("icon") ?? string("iconPath"),
             symbolName: string("symbol"),
             accentHex: string("accent"),
             bundleIdentifier: string("bundleID") ?? string("bundleId"),
             targetURL: string("url").flatMap(URL.init(string:)),
-            duration: max(1.5, min(duration, 30.0))
+            duration: clampedDuration
         )
     }
 }

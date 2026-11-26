@@ -185,11 +185,13 @@ final class SignalHub {
                     source: .bridge,
                     badge: payload.badge,
                     style: payload.style,
+                    loop: payload.loop,
                     iconPath: payload.iconPath,
                     symbolName: payload.symbolName,
                     accentHex: payload.accentHex,
                     bundleIdentifier: payload.bundleIdentifier,
-                    targetURL: payload.targetURL
+                    targetURL: payload.targetURL,
+                    duration: payload.duration
                 )
             )
         case .peek:
@@ -201,12 +203,13 @@ final class SignalHub {
                 source: .bridge,
                 badge: payload.badge,
                 style: payload.style,
+                loop: payload.loop,
                 iconPath: payload.iconPath,
                 symbolName: payload.symbolName,
                 accentHex: payload.accentHex,
                 bundleIdentifier: payload.bundleIdentifier,
                 targetURL: payload.targetURL,
-                duration: payload.duration
+                duration: payload.duration ?? settings.peekDurationSeconds
             )
             stateMachine.presentPeek(alert)
         }

@@ -61,6 +61,14 @@ struct NotchPeekView: View {
         .onChange(of: alert.timestamp) { _, _ in
             triggerArrivalOptics()
         }
+        .task(id: "\(alert.id)-\(alert.timestamp.timeIntervalSince1970)-\(alert.loop)") {
+            guard alert.loop, alert.badge == nil, alert.style == .dot else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_200_000_000)
+                guard !Task.isCancelled else { break }
+                triggerSonarPing()
+            }
+        }
     }
 
     private func triggerArrivalOptics() {
@@ -70,8 +78,12 @@ struct NotchPeekView: View {
             arrivalScale = 1.0
         }
 
-        // Single restrained sonar ping on dot-only arrivals (never loops)
+        // Single restrained sonar ping on dot-only arrivals
         guard alert.badge == nil, alert.style == .dot else { return }
+        triggerSonarPing()
+    }
+
+    private func triggerSonarPing() {
         rippleScale = 1.0
         rippleOpacity = 0.68
         withAnimation(.easeOut(duration: 0.72)) {
