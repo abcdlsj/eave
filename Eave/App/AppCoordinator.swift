@@ -255,7 +255,8 @@ final class AppCoordinator {
             self?.eventMonitor.handleEaveToggleHover(isHovering: isHovering)
         }
         menuBarManager.onWillHandleToggleInteraction = { [weak self] in
-            self?.eventMonitor.cancelPendingHover()
+            // Disarm hover until the pointer leaves the icon, so the click's result is not undone by a hover.
+            self?.eventMonitor.cancelPendingHover(requireExit: true)
             self?.secondRowBarController.hide()
         }
         menuBarManager.isPointerProtectedFromRehide = { [weak self] in
@@ -300,7 +301,7 @@ final class AppCoordinator {
             switch self.settings.hoverDisplayMode {
             case .inline:
                 guard !self.menuBarManager.isHiddenExpanded else { return }
-                self.menuBarManager.expandHidden()
+                self.menuBarManager.expandFromHover()
             case .secondRow:
                 guard !self.menuBarManager.isHiddenExpanded else { return }
                 guard !self.secondRowBarController.isVisible else { return }
@@ -316,7 +317,9 @@ final class AppCoordinator {
             }
             if self.menuBarManager.isHiddenExpanded,
                self.notchPanelController?.isPointInsideActiveSurface(loc) == false {
-                if self.menuBarManager.isTransientForwardExpansion || self.settings.rehideAutomatically {
+                if self.menuBarManager.isTransientForwardExpansion
+                    || self.menuBarManager.isHoverExpansion
+                    || self.settings.rehideAutomatically {
                     self.menuBarManager.collapseAll()
                 }
             }
@@ -324,8 +327,18 @@ final class AppCoordinator {
                 self.searchController.close()
             }
         }
+        eventMonitor.onMenuBarClick = { [weak self] point in
+            self?.menuBarManager.noteMenuBarClick(at: point)
+        }
+        eventMonitor.onMouseUp = { [weak self] inMenuBar, commandHeld in
+            self?.menuBarManager.noteMouseUp(inMenuBar: inMenuBar, commandHeld: commandHeld)
+        }
+        eventMonitor.onToggleHoverExit = { [weak self] in
+            self?.menuBarManager.notePointerLeftToggle()
+        }
         eventMonitor.onMouseMoved = { [weak self] point in
             guard let self else { return }
+            self.menuBarManager.handlePointerMoved(to: point)
             self.notchPanelController?.handleGlobalPointerMove(to: point)
             self.secondRowBarController.handleGlobalPointerMove(
                 to: point,
@@ -334,7 +347,9 @@ final class AppCoordinator {
         }
         eventMonitor.needsPointerTracking = { [weak self] in
             guard let self else { return false }
-            return self.notchStateMachine.isInteractiveState || self.secondRowBarController.isVisible
+            return self.notchStateMachine.isInteractiveState
+                || self.secondRowBarController.isVisible
+                || self.menuBarManager.isHoverExpansion
         }
     }
 

@@ -12,6 +12,23 @@ final class MenuBarManager: NSObject {
     /// without leaving excessive empty horizontal padding in the menu bar.
     static let expandedSeparatorLength: CGFloat = 10
     private static let transientForwardRehideSeconds: TimeInterval = 4.0
+    /// How long the pointer may stay outside the menu bar before a hover-only reveal collapses again.
+    private static let hoverLeaveGraceSeconds: TimeInterval = 0.45
+    /// Window after a click in the menu bar during which app-activation must not collapse revealed items
+    /// (clicking a revealed item often activates its owning app).
+    private static let recentMenuBarClickSeconds: TimeInterval = 1.5
+
+    /// Why the hidden section is currently expanded. Drives which dismissal rules apply.
+    enum ExpansionSource: Equatable {
+        /// Collapsed.
+        case none
+        /// Explicit user intent (click, hotkey, menu): stays until click-away, app switch, or auto-rehide.
+        case user
+        /// Hover-only reveal: collapses as soon as the pointer leaves the menu bar, unless the user interacts.
+        case hover
+        /// Briefly expanded to anchor a forwarded click on a hidden item.
+        case transientForward
+    }
 
     private let settings: EaveSettings
 
@@ -28,9 +45,18 @@ final class MenuBarManager: NSObject {
     private var activeSpaceObserver: Any?
     private var cachedMultiDisplayToggleFrames: [CGRect] = []
 
+    private var hoverLeaveTimer: Timer?
+    private var dragEndValidationTask: Task<Void, Never>?
+    private var lastMenuBarClickTime: CFAbsoluteTime = 0
+    /// Set once the pointer leaves the Eave icon after a hover reveal; a click before that pins the reveal.
+    private var pointerLeftToggleSinceHoverReveal = false
+
     private(set) var isHiddenExpanded: Bool = false
+    private(set) var expansionSource: ExpansionSource = .none
     /// True when the menu bar was temporarily expanded solely to anchor a forwarded menu-bar-only app click.
-    private(set) var isTransientForwardExpansion: Bool = false
+    var isTransientForwardExpansion: Bool { isHiddenExpanded && expansionSource == .transientForward }
+    /// True while the hidden section is shown only because the pointer hovered the Eave icon.
+    var isHoverExpansion: Bool { isHiddenExpanded && expansionSource == .hover }
     private(set) var isContextMenuOpen: Bool = false
 
     /// Callbacks wired by AppCoordinator for cross-module orchestration.
@@ -47,11 +73,20 @@ final class MenuBarManager: NSObject {
         super.init()
         setupStatusItems()
         observeWorkspace()
+        // A divider left right of the icon by an earlier ⌘-drag would hide the Eave icon from launch on.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            self?.repairControlOrderIfNeeded()
+        }
     }
 
     func tearDown() {
         rehideTimer?.invalidate()
         rehideTimer = nil
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
+        dragEndValidationTask?.cancel()
+        dragEndValidationTask = nil
         if let observer = appSwitchObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             appSwitchObserver = nil
@@ -81,21 +116,105 @@ final class MenuBarManager: NSObject {
     }
 
     func expandHidden() {
-        isTransientForwardExpansion = false
-        isHiddenExpanded = true
-        applySeparatorLengths()
-        scheduleAutoRehideIfNeeded()
-        onExpansionChanged?(true)
+        expand(source: .user)
+    }
+
+    /// Reveals hidden items because the pointer is resting on the Eave icon.
+    /// The reveal is transient: it collapses once the pointer leaves the menu bar unless the user interacts.
+    func expandFromHover() {
+        guard !isHiddenExpanded else { return }
+        pointerLeftToggleSinceHoverReveal = false
+        expand(source: .hover)
     }
 
     /// Briefly reveals the hidden section so a menu-bar-only popover/menu can anchor at the top-right,
     /// then collapses immediately once interaction ends.
     func expandTemporarilyForForwarding() {
-        isTransientForwardExpansion = true
+        expand(source: .transientForward)
+    }
+
+    private func expand(source: ExpansionSource) {
+        let wasExpanded = isHiddenExpanded
+        expansionSource = source
         isHiddenExpanded = true
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
         applySeparatorLengths()
         scheduleAutoRehideIfNeeded()
-        onExpansionChanged?(true)
+        if !wasExpanded {
+            onExpansionChanged?(true)
+        }
+    }
+
+    /// Converts a hover-only reveal into a regular one (the user clicked into the revealed menu bar,
+    /// so its menus must not vanish when the pointer moves down into them).
+    func promoteHoverExpansionToUser() {
+        guard isHoverExpansion else { return }
+        expansionSource = .user
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
+        scheduleAutoRehideIfNeeded()
+    }
+
+    /// Called by the event monitor when the pointer leaves the Eave icon.
+    func notePointerLeftToggle() {
+        pointerLeftToggleSinceHoverReveal = true
+    }
+
+    /// Any mouse-down inside the menu bar (on any display).
+    func noteMenuBarClick(at point: CGPoint) {
+        lastMenuBarClickTime = CFAbsoluteTimeGetCurrent()
+        // A click on the Eave icon itself is handled by `handleToggleClick` (which pins a hover reveal);
+        // on systems where the global monitor also sees that click, promoting here would make it collapse.
+        let onToggle = allToggleItemFrames.contains { $0.insetBy(dx: -3, dy: -3).contains(point) }
+        guard !onToggle else { return }
+        promoteHoverExpansionToUser()
+    }
+
+    /// Any mouse-up anywhere. Used to re-validate Eave's control item order after a ⌘-drag in the menu bar.
+    func noteMouseUp(inMenuBar: Bool, commandHeld: Bool) {
+        guard inMenuBar || commandHeld else { return }
+        dragEndValidationTask?.cancel()
+        dragEndValidationTask = Task { [weak self] in
+            // Let the status bar settle the dropped item before reading frames.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.repairControlOrderIfNeeded()
+            self.refreshToggleFramesCache()
+            if self.isHiddenExpanded {
+                self.scheduleAutoRehideIfNeeded()
+            }
+        }
+    }
+
+    /// Hover-reveal dismissal: collapses shortly after the pointer leaves the menu bar band.
+    func handlePointerMoved(to point: CGPoint) {
+        guard isHoverExpansion else {
+            hoverLeaveTimer?.invalidate()
+            hoverLeaveTimer = nil
+            return
+        }
+        if Self.isPointInMenuBar(point) {
+            hoverLeaveTimer?.invalidate()
+            hoverLeaveTimer = nil
+            return
+        }
+        guard hoverLeaveTimer == nil else { return }
+        hoverLeaveTimer = Timer.scheduledTimer(withTimeInterval: Self.hoverLeaveGraceSeconds, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.hoverLeaveTimer = nil
+                guard self.isHoverExpansion else { return }
+                if Self.isPointInMenuBar(NSEvent.mouseLocation) { return }
+                if self.isInteractionInProgress() { 
+                    // Re-arm: keep checking until the drag/menu finishes.
+                    self.handlePointerMoved(to: NSEvent.mouseLocation)
+                    return
+                }
+                if self.isPointerProtectedFromRehide?() == true { return }
+                self.collapseAll()
+            }
+        }
     }
 
     func collapseIfTransient() {
@@ -107,10 +226,22 @@ final class MenuBarManager: NSObject {
         guard isHiddenExpanded else { return }
         rehideTimer?.invalidate()
         rehideTimer = nil
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
+        // If the user ⌘-dragged the divider to the right of the Eave icon (or the icon left of the divider),
+        // collapsing would push the Eave icon itself off-screen. Repair the order first.
+        repairControlOrderIfNeeded()
         isHiddenExpanded = false
-        isTransientForwardExpansion = false
+        expansionSource = .none
         applySeparatorLengths()
         onExpansionChanged?(false)
+    }
+
+    /// True while a mouse button is held (⌘-dragging an icon) or a menu from any app is open.
+    /// Collapsing then would yank the separator mid-drag or orphan the open menu.
+    func isInteractionInProgress() -> Bool {
+        if NSEvent.pressedMouseButtons != 0 { return true }
+        return Self.isAnyMenuOpenOnScreen()
     }
 
     /// Resets the auto-rehide countdown (for example while the user interacts with expanded items).
@@ -385,6 +516,13 @@ final class MenuBarManager: NSObject {
             return
         }
 
+        // The hover reveal usually fires a moment before the click lands. Treat that click as
+        // "keep it open" instead of immediately collapsing what the user is about to use.
+        if isHoverExpansion && !pointerLeftToggleSinceHoverReveal {
+            promoteHoverExpansionToUser()
+            return
+        }
+
         toggleHidden()
     }
 
@@ -436,8 +574,17 @@ final class MenuBarManager: NSObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isHiddenExpanded else { return }
-                guard self.settings.rehideAutomatically || self.isTransientForwardExpansion else { return }
+                guard self.settings.rehideAutomatically
+                    || self.isTransientForwardExpansion
+                    || self.isHoverExpansion else { return }
                 if self.isPointerProtectedFromRehide?() == true { return }
+                // Clicking a revealed item frequently activates its owning app; that is not "switching away".
+                if CFAbsoluteTimeGetCurrent() - self.lastMenuBarClickTime < Self.recentMenuBarClickSeconds { return }
+                if Self.isPointInMenuBar(NSEvent.mouseLocation) { return }
+                if self.isInteractionInProgress() {
+                    self.scheduleAutoRehideIfNeeded()
+                    return
+                }
                 self.collapseAll()
             }
         }
@@ -472,6 +619,9 @@ final class MenuBarManager: NSObject {
         let delay: TimeInterval
         if isTransientForwardExpansion {
             delay = Self.transientForwardRehideSeconds
+        } else if isHoverExpansion {
+            // Hover reveals are dismissed by pointer-leave; keep an inactivity fallback regardless of the setting.
+            delay = EaveSettings.defaultAutoRehideDelaySeconds
         } else if settings.rehideAutomatically {
             delay = EaveSettings.defaultAutoRehideDelaySeconds
         } else {
@@ -481,7 +631,9 @@ final class MenuBarManager: NSObject {
         rehideTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isHiddenExpanded else { return }
-                if self.isCursorInMenuBar() || self.isPointerProtectedFromRehide?() == true {
+                if Self.isPointInMenuBar(NSEvent.mouseLocation)
+                    || self.isPointerProtectedFromRehide?() == true
+                    || self.isInteractionInProgress() {
                     self.scheduleAutoRehideIfNeeded()
                     return
                 }
@@ -490,13 +642,71 @@ final class MenuBarManager: NSObject {
         }
     }
 
-    private func isCursorInMenuBar() -> Bool {
-        let loc = NSEvent.mouseLocation
-        for screen in NSScreen.screens where screen.frame.contains(loc) {
-            let barHeight = max(screen.safeAreaInsets.top, 28)
-            return loc.y >= screen.frame.maxY - barHeight - 4
+    /// Menu-bar band test with a small cushion so pointer jitter at the bar's lower edge does not count as leaving.
+    nonisolated static func isPointInMenuBar(_ point: CGPoint) -> Bool {
+        for screen in NSScreen.screens where screen.frame.contains(point) {
+            let visibleTopInset = max(0, screen.frame.maxY - screen.visibleFrame.maxY)
+            let barHeight = max(screen.safeAreaInsets.top, visibleTopInset, 24)
+            return point.y >= screen.frame.maxY - barHeight - 4
         }
         return false
+    }
+
+    /// Detects an open NSMenu-style menu (any app) via WindowServer's pop-up menu window layer.
+    nonisolated static func isAnyMenuOpenOnScreen() -> Bool {
+        let popUpLayer = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] else {
+            return false
+        }
+        return info.contains { window in
+            (window[kCGWindowLayer as String] as? Int) == popUpLayer
+        }
+    }
+
+    // MARK: - Control Item Order
+
+    private static let togglePositionKey = "NSStatusItem Preferred Position eave.control.toggle"
+    private static let hiddenPositionKey = "NSStatusItem Preferred Position eave.control.hidden"
+
+    /// The divider must sit LEFT of the Eave icon. If a ⌘-drag put it on the right, a collapse would push
+    /// the Eave icon (and every visible item between them) off-screen with no way to get it back.
+    /// Works expanded or collapsed (collapsed, the 10,000pt divider's centre is far left of a correctly placed icon,
+    /// and a ⌘-dragged-left icon ends up left of it). Re-seats the divider just left of the icon.
+    /// Returns true when a repair was performed.
+    @discardableResult
+    func repairControlOrderIfNeeded() -> Bool {
+        guard let toggleFrame = toggleItem.button?.window?.frame,
+              let separatorFrame = hiddenSeparator.button?.window?.frame,
+              toggleFrame.width > 0, separatorFrame.width > 0 else {
+            return false
+        }
+        // Only comparable when both live on the same display's menu bar.
+        guard abs(toggleFrame.midY - separatorFrame.midY) < 40 else { return false }
+        guard Self.isControlOrderInvalid(toggleFrame: toggleFrame, separatorFrame: separatorFrame) else {
+            return false
+        }
+
+        let defaults = UserDefaults.standard
+        let togglePosition = defaults.double(forKey: Self.togglePositionKey)
+        NSStatusBar.system.removeStatusItem(hiddenSeparator)
+        defaults.set(togglePosition + toggleFrame.width + 2, forKey: Self.hiddenPositionKey)
+
+        hiddenSeparator = NSStatusBar.system.statusItem(withLength: Self.expandedSeparatorLength)
+        hiddenSeparator.autosaveName = "eave.control.hidden"
+        configureSeparatorButton(
+            hiddenSeparator,
+            image: Self.makeDividerImage(),
+            tooltip: "Eave Hidden Divider (⌘-drag icons left to hide)"
+        )
+        applySeparatorLengths()
+        refreshToggleFramesCache()
+        return true
+    }
+
+    /// Pure order check: the divider is invalid when its centre is at or right of the Eave icon's centre.
+    nonisolated static func isControlOrderInvalid(toggleFrame: CGRect, separatorFrame: CGRect) -> Bool {
+        separatorFrame.midX >= toggleFrame.midX
     }
 }
 

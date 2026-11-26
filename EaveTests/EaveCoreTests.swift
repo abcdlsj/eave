@@ -568,4 +568,18 @@ final class EaveCoreTests: XCTestCase {
         let distant = EaveDockMagnification.resolve(index: 4, hoveredIndex: 2)
         XCTAssertEqual(distant, .resting)
     }
+
+    // MARK: - Control Item Order
+
+    func testControlOrderValidWhenDividerLeftOfToggle() {
+        let toggle = CGRect(x: 1300, y: 950, width: 30, height: 32)
+        let divider = CGRect(x: 1286, y: 950, width: 10, height: 32)
+        XCTAssertFalse(MenuBarManager.isControlOrderInvalid(toggleFrame: toggle, separatorFrame: divider))
+    }
+
+    func testControlOrderInvalidWhenDividerDraggedRightOfToggle() {
+        let toggle = CGRect(x: 1300, y: 950, width: 30, height: 32)
+        let divider = CGRect(x: 1334, y: 950, width: 10, height: 32)
+        XCTAssertTrue(MenuBarManager.isControlOrderInvalid(toggleFrame: toggle, separatorFrame: divider))
+    }
 }
