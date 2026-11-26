@@ -23,6 +23,9 @@ final class MenuBarEventMonitor {
 
     private var isPointerOverEaveToggle: Bool = false
     private var hoveredToggleFrame: CGRect?
+    /// Set after an explicit click on the Eave icon so the pointer still resting on it
+    /// cannot immediately re-trigger hover reveal (which used to undo the click).
+    private(set) var isHoverSuppressedUntilExit: Bool = false
 
     init(settings: EaveSettings) {
         self.settings = settings
@@ -60,6 +63,17 @@ final class MenuBarEventMonitor {
         hoveredToggleFrame = nil
     }
 
+    /// Called when the user explicitly clicks the Eave icon. Cancels any pending hover reveal and keeps
+    /// hover reveal disarmed until the pointer leaves the icon, so the click result stays stable.
+    func suppressHoverUntilPointerExits() {
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        isHoverSuppressedUntilExit = true
+        let loc = NSEvent.mouseLocation
+        hoveredToggleFrame = matchingToggleFrame(at: loc)
+        isPointerOverEaveToggle = hoveredToggleFrame != nil
+    }
+
     /// Invoked either by `StatusItemHoverView`'s native `NSTrackingArea` or by global pointer tracking
     /// when the cursor enters or leaves any display's Eave menu bar icon.
     func handleEaveToggleHover(isHovering: Bool, anchorFrame: CGRect? = nil) {
@@ -77,6 +91,7 @@ final class MenuBarEventMonitor {
             guard !isPointerOverEaveToggle else { return }
             isPointerOverEaveToggle = true
 
+            guard !isHoverSuppressedUntilExit else { return }
             guard shouldAllowHoverTrigger() else { return }
             guard hoverTimer == nil else { return }
 
@@ -87,6 +102,7 @@ final class MenuBarEventMonitor {
                     self.hoverTimer = nil
                     let loc = NSEvent.mouseLocation
                     guard self.settings.expandOnEaveHover,
+                          !self.isHoverSuppressedUntilExit,
                           self.shouldAllowHoverTrigger(),
                           let activeAnchor = self.matchingToggleFrame(at: loc) else {
                         return
@@ -97,6 +113,7 @@ final class MenuBarEventMonitor {
             }
         } else {
             isPointerOverEaveToggle = false
+            isHoverSuppressedUntilExit = false
             hoveredToggleFrame = nil
             hoverTimer?.invalidate()
             hoverTimer = nil
@@ -130,6 +147,9 @@ final class MenuBarEventMonitor {
                 handleEaveToggleHover(isHovering: hoveringToggle, anchorFrame: matched)
             } else if let matched {
                 hoveredToggleFrame = matched
+            } else if isHoverSuppressedUntilExit {
+                // Safety net: the pointer is provably off every Eave icon, so re-arm hover.
+                isHoverSuppressedUntilExit = false
             }
         } else if hoverTimer != nil {
             cancelPendingHover()
@@ -155,7 +175,9 @@ final class MenuBarEventMonitor {
     }
 
     private func isInMenuBar(_ point: CGPoint) -> Bool {
-        for screen in NSScreen.screens where screen.frame.contains(point) {
+        // Extend 1pt upwards: `NSRect.contains` excludes `maxY`, so the topmost pixel row would
+        // otherwise be treated as an outside click and collapse the menu bar.
+        for screen in NSScreen.screens where screen.frame.insetBy(dx: 0, dy: -1).contains(point) {
             let barHeight = max(screen.safeAreaInsets.top, 28)
             return point.y >= screen.frame.maxY - barHeight
         }

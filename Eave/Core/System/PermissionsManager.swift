@@ -8,6 +8,8 @@ import Observation
 @Observable
 final class PermissionsManager {
     private(set) var hasAccessibility: Bool = false
+    /// Fired when Accessibility trust flips (granted or revoked), so dependants can rescan immediately.
+    var onAccessibilityChanged: ((Bool) -> Void)?
 
     private var pollTimer: Timer?
 
@@ -16,7 +18,10 @@ final class PermissionsManager {
     }
 
     func refresh() {
-        hasAccessibility = AXIsProcessTrusted()
+        let trusted = AXIsProcessTrusted()
+        guard trusted != hasAccessibility else { return }
+        hasAccessibility = trusted
+        onAccessibilityChanged?(trusted)
     }
 
     func startPolling(interval: TimeInterval = 2.5) {

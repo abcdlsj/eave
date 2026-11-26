@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import Observation
 
@@ -11,7 +12,15 @@ final class MenuBarManager: NSObject {
     /// Compact divider slot width so the separator sits tightly between Visible and Hidden items
     /// without leaving excessive empty horizontal padding in the menu bar.
     static let expandedSeparatorLength: CGFloat = 10
-    private static let transientForwardRehideSeconds: TimeInterval = 4.0
+    /// Grace period after a forwarded click before Eave starts checking whether the target's menu/popover closed.
+    private static let transientForwardGraceSeconds: TimeInterval = 1.5
+    /// Poll interval used while a forwarded menu/popover is still open.
+    private static let transientForwardPollSeconds: TimeInterval = 0.5
+    /// Hard ceiling so an app with a permanent floating window can't keep the bar expanded forever.
+    private static let transientForwardMaxSeconds: CFTimeInterval = 120
+    private var transientForwardStartTime: CFAbsoluteTime = 0
+    /// A click this soon after a hover reveal is treated as "keep it open", not "collapse".
+    private static let hoverClickPinWindowSeconds: CFTimeInterval = 0.9
 
     private let settings: EaveSettings
 
@@ -32,16 +41,24 @@ final class MenuBarManager: NSObject {
     /// True when the menu bar was temporarily expanded solely to anchor a forwarded menu-bar-only app click.
     private(set) var isTransientForwardExpansion: Bool = false
     private(set) var isContextMenuOpen: Bool = false
+    /// pid of the app whose menu/popover was opened by a transient forwarded click.
+    private(set) var transientForwardTargetPID: pid_t?
+    /// True when the current expansion came from hovering the Eave icon (not an explicit click/hotkey).
+    private(set) var isHoverExpansion: Bool = false
+    private var hoverExpansionTime: CFAbsoluteTime = 0
 
     /// Callbacks wired by AppCoordinator for cross-module orchestration.
     var onRequestOpenSearch: (() -> Void)?
     var onRequestOpenSettings: (() -> Void)?
     var onRequestOpenOnboarding: (() -> Void)?
-    var onRequestTestPeek: (() -> Void)?
     var onExpansionChanged: ((Bool) -> Void)?
     var onToggleHoverChanged: ((Bool) -> Void)?
     var onWillHandleToggleInteraction: (() -> Void)?
+    /// Lets the coordinator consume a left click (e.g. to pin a visible Second Row) before it toggles.
+    var shouldInterceptToggleClick: (() -> Bool)?
     var isPointerProtectedFromRehide: (() -> Bool)?
+    /// Returns true while auto-rehide must be paused entirely (e.g. onboarding teaching ⌘-drag).
+    var isAutoRehidePaused: (() -> Bool)?
 
     init(settings: EaveSettings) {
         self.settings = settings
@@ -83,20 +100,70 @@ final class MenuBarManager: NSObject {
 
     func expandHidden() {
         isTransientForwardExpansion = false
+        transientForwardTargetPID = nil
+        isHoverExpansion = false
         isHiddenExpanded = true
         applySeparatorLengths()
         scheduleAutoRehideIfNeeded()
         onExpansionChanged?(true)
     }
 
+    /// Inline reveal triggered by hovering the Eave icon. A click that lands right after it pins the
+    /// expansion instead of collapsing it (see `handleToggleClick`).
+    func expandHiddenFromHover() {
+        expandHidden()
+        isHoverExpansion = true
+        hoverExpansionTime = CFAbsoluteTimeGetCurrent()
+    }
+
     /// Briefly reveals the hidden section so a menu-bar-only popover/menu can anchor at the top-right,
-    /// then collapses immediately once interaction ends.
-    func expandTemporarilyForForwarding() {
+    /// then collapses once the target app's menu/popover is dismissed.
+    func expandTemporarilyForForwarding(targetPID: pid_t) {
         isTransientForwardExpansion = true
+        transientForwardTargetPID = targetPID
+        transientForwardStartTime = CFAbsoluteTimeGetCurrent()
+        isHoverExpansion = false
         isHiddenExpanded = true
         applySeparatorLengths()
         scheduleAutoRehideIfNeeded()
         onExpansionChanged?(true)
+    }
+
+    /// True while the transient forwarding target still shows a menu, popover, or panel on screen.
+    func transientTargetHasOpenUI() -> Bool {
+        guard isTransientForwardExpansion, let pid = transientForwardTargetPID else { return false }
+        guard CFAbsoluteTimeGetCurrent() - transientForwardStartTime < Self.transientForwardMaxSeconds else { return false }
+        return Self.hasOpenTransientUI(pid: pid)
+    }
+
+    /// Detects on-screen menus/popovers owned by `pid` using only window metadata (layer, bounds, owner),
+    /// which never requires Screen Recording permission.
+    nonisolated static func hasOpenTransientUI(pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else {
+            return false
+        }
+        return list.contains { entry in
+            guard (entry[kCGWindowOwnerPID as String] as? Int).map({ pid_t($0) }) == pid else { return false }
+            let layer = entry[kCGWindowLayer as String] as? Int ?? 0
+            return isTransientUIWindow(layer: layer, bounds: windowBounds(entry))
+        }
+    }
+
+    /// Pure classifier: menus (layer 101), popovers and floating panels count; status item windows (layer 25)
+    /// and the app's normal document windows (layer 0) do not.
+    nonisolated static func isTransientUIWindow(layer: Int, bounds: CGRect) -> Bool {
+        guard layer != Int(CGWindowLevelForKey(.statusWindow)) else { return false }
+        guard layer > 0 else { return false }
+        return bounds.width > 4 && bounds.height > 4
+    }
+
+    private nonisolated static func windowBounds(_ entry: [String: Any]) -> CGRect {
+        guard let dict = entry[kCGWindowBounds as String] as? NSDictionary,
+              let rect = CGRect(dictionaryRepresentation: dict as CFDictionary) else {
+            return .zero
+        }
+        return rect
     }
 
     func collapseIfTransient() {
@@ -108,10 +175,37 @@ final class MenuBarManager: NSObject {
         guard isHiddenExpanded else { return }
         rehideTimer?.invalidate()
         rehideTimer = nil
+        guard isSeparatorOrderValid else {
+            // The divider was ⌘-dragged to the right of the Eave icon. Collapsing now would push the
+            // Eave icon itself off-screen, so stay expanded and let the user drag the divider back.
+            isTransientForwardExpansion = false
+            transientForwardTargetPID = nil
+            isHoverExpansion = false
+            NSSound.beep()
+            return
+        }
         isHiddenExpanded = false
         isTransientForwardExpansion = false
+        transientForwardTargetPID = nil
+        isHoverExpansion = false
         applySeparatorLengths()
         onExpansionChanged?(false)
+    }
+
+    /// The hidden divider must sit to the LEFT of the Eave icon; otherwise inflating it hides Eave too.
+    var isSeparatorOrderValid: Bool {
+        guard let separatorFrame = hiddenSeparator.button?.window?.frame,
+              let toggleFrame = toggleItem.button?.window?.frame else {
+            return true
+        }
+        return Self.isSeparatorOrderValid(separatorFrame: separatorFrame, toggleFrame: toggleFrame)
+    }
+
+    nonisolated static func isSeparatorOrderValid(separatorFrame: CGRect, toggleFrame: CGRect) -> Bool {
+        guard separatorFrame.width > 0, toggleFrame.width > 0 else { return true }
+        // Only comparable when both live on the same menu bar row.
+        guard abs(separatorFrame.midY - toggleFrame.midY) < 20 else { return true }
+        return separatorFrame.midX < toggleFrame.midX
     }
 
     /// Resets the auto-rehide countdown (for example while the user interacts with expanded items).
@@ -287,7 +381,7 @@ final class MenuBarManager: NSObject {
         configureSeparatorButton(
             hiddenSeparator,
             image: Self.makeDividerImage(),
-            tooltip: "Eave Hidden Divider (⌘-drag icons left to hide)"
+            tooltip: "Eave divider: ⌘-drag icons to its left to hide them. Keep it left of the Eave icon."
         )
 
         applySeparatorLengths()
@@ -386,6 +480,19 @@ final class MenuBarManager: NSObject {
             return
         }
 
+        if shouldInterceptToggleClick?() == true {
+            return
+        }
+
+        // A click arriving right after a hover reveal means "I want these open", so keep them
+        // open (and turn the hover reveal into a regular expansion) rather than collapsing.
+        if isHiddenExpanded, isHoverExpansion,
+           CFAbsoluteTimeGetCurrent() - hoverExpansionTime < Self.hoverClickPinWindowSeconds {
+            isHoverExpansion = false
+            scheduleAutoRehideIfNeeded()
+            return
+        }
+
         toggleHidden()
     }
 
@@ -399,16 +506,19 @@ final class MenuBarManager: NSObject {
             return item
         }
 
-        let toggleTitle = isHiddenExpanded ? "Hide Menu Bar Items" : "Show Hidden Items"
+        let toggleTitle = isHiddenExpanded ? "Hide Hidden Items" : "Show Hidden Items"
         let toggleSymbol = isHiddenExpanded ? "eye.slash" : "eye"
-        menu.addItem(makeItem(title: toggleTitle, symbol: toggleSymbol, action: #selector(menuToggleHidden)))
-        menu.addItem(makeItem(title: "Search Menu Bar...", symbol: "magnifyingglass", action: #selector(menuOpenSearch)))
+        let toggleItem = makeItem(title: toggleTitle, symbol: toggleSymbol, action: #selector(menuToggleHidden))
+        Self.applyShortcutHint(settings.hotKey(for: .toggleHidden), to: toggleItem)
+        menu.addItem(toggleItem)
+        let searchItem = makeItem(title: "Search Menu Bar…", symbol: "magnifyingglass", action: #selector(menuOpenSearch))
+        Self.applyShortcutHint(settings.hotKey(for: .openSearch), to: searchItem)
+        menu.addItem(searchItem)
 
         menu.addItem(.separator())
 
-        menu.addItem(makeItem(title: "Preview Notch Peek", symbol: "bell.badge", action: #selector(menuTestPeek)))
-        menu.addItem(makeItem(title: "Quick Start Guide...", symbol: "sparkles", action: #selector(menuOpenOnboarding)))
-        menu.addItem(makeItem(title: "Settings...", symbol: "gearshape", action: #selector(menuOpenSettings), keyEquivalent: ","))
+        menu.addItem(makeItem(title: "Quick Start Guide…", symbol: "sparkles", action: #selector(menuOpenOnboarding)))
+        menu.addItem(makeItem(title: "Settings…", symbol: "gearshape", action: #selector(menuOpenSettings), keyEquivalent: ","))
 
         menu.addItem(.separator())
 
@@ -422,9 +532,22 @@ final class MenuBarManager: NSObject {
         toggleItem.menu = nil
     }
 
+    /// Shows the global hotkey next to a context menu item (display only; letters only).
+    private static func applyShortcutHint(_ combo: KeyCombo?, to item: NSMenuItem) {
+        guard let combo else { return }
+        let label = KeyCombo.keyLabel(for: combo.keyCode)
+        guard label.count == 1, label.first?.isLetter == true else { return }
+        item.keyEquivalent = label.lowercased()
+        var mask: NSEvent.ModifierFlags = []
+        if combo.carbonModifiers & UInt32(cmdKey) != 0 { mask.insert(.command) }
+        if combo.carbonModifiers & UInt32(optionKey) != 0 { mask.insert(.option) }
+        if combo.carbonModifiers & UInt32(controlKey) != 0 { mask.insert(.control) }
+        if combo.carbonModifiers & UInt32(shiftKey) != 0 { mask.insert(.shift) }
+        item.keyEquivalentModifierMask = mask
+    }
+
     @objc private func menuToggleHidden() { toggleHidden() }
     @objc private func menuOpenSearch() { onRequestOpenSearch?() }
-    @objc private func menuTestPeek() { onRequestTestPeek?() }
     @objc private func menuOpenOnboarding() { onRequestOpenOnboarding?() }
     @objc private func menuOpenSettings() { onRequestOpenSettings?() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
@@ -436,11 +559,19 @@ final class MenuBarManager: NSObject {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
+            let activatedPID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
             Task { @MainActor [weak self] in
                 guard let self, self.isHiddenExpanded else { return }
                 guard self.settings.rehideAutomatically || self.isTransientForwardExpansion else { return }
+                if self.isAutoRehidePaused?() == true { return }
                 if self.isPointerProtectedFromRehide?() == true { return }
+                // The forwarded app activating itself to show its popover is expected, not an app switch.
+                if self.isTransientForwardExpansion,
+                   let target = self.transientForwardTargetPID,
+                   activatedPID == target {
+                    return
+                }
                 self.collapseAll()
             }
         }
@@ -474,7 +605,7 @@ final class MenuBarManager: NSObject {
 
         let delay: TimeInterval
         if isTransientForwardExpansion {
-            delay = Self.transientForwardRehideSeconds
+            delay = Self.transientForwardGraceSeconds
         } else if settings.rehideAutomatically {
             delay = EaveSettings.defaultAutoRehideDelaySeconds
         } else {
@@ -484,11 +615,37 @@ final class MenuBarManager: NSObject {
         rehideTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isHiddenExpanded else { return }
-                if self.isCursorInMenuBar() || self.isPointerProtectedFromRehide?() == true {
+                if self.isTransientForwardExpansion {
+                    // Keep the status item anchored while the forwarded menu/popover is still open;
+                    // collapse shortly after it is dismissed.
+                    if self.transientTargetHasOpenUI() || self.isCursorInMenuBar() {
+                        self.scheduleTransientPoll()
+                        return
+                    }
+                    self.collapseAll()
+                    return
+                }
+                if self.isAutoRehidePaused?() == true
+                    || self.isCursorInMenuBar()
+                    || self.isPointerProtectedFromRehide?() == true {
                     self.scheduleAutoRehideIfNeeded()
                     return
                 }
                 self.collapseAll()
+            }
+        }
+    }
+
+    private func scheduleTransientPoll() {
+        rehideTimer?.invalidate()
+        rehideTimer = Timer.scheduledTimer(withTimeInterval: Self.transientForwardPollSeconds, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isHiddenExpanded, self.isTransientForwardExpansion else { return }
+                if self.transientTargetHasOpenUI() || self.isCursorInMenuBar() {
+                    self.scheduleTransientPoll()
+                } else {
+                    self.collapseAll()
+                }
             }
         }
     }

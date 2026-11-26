@@ -16,6 +16,8 @@ struct EaveApp: App {
 @MainActor
 final class EaveAppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: AppCoordinator?
+    /// URLs delivered before launch finished (cold start via `eave://…`) are replayed once ready.
+    private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Avoid spawning live UI/status items when hosted inside the unit test runner.
@@ -27,6 +29,11 @@ final class EaveAppDelegate: NSObject, NSApplicationDelegate {
         let coordinator = AppCoordinator()
         self.coordinator = coordinator
         coordinator.start()
+        let queued = pendingURLs
+        pendingURLs.removeAll()
+        for url in queued {
+            coordinator.handleIncomingURL(url)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -34,8 +41,12 @@ final class EaveAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard let coordinator else {
+            pendingURLs.append(contentsOf: urls)
+            return
+        }
         for url in urls {
-            coordinator?.handleIncomingURL(url)
+            coordinator.handleIncomingURL(url)
         }
     }
 

@@ -71,7 +71,11 @@ final class AppCoordinator {
         wireHotKeys()
         wireSearch()
 
+        permissions.onAccessibilityChanged = { [weak self] granted in
+            self?.handleAccessibilityChanged(granted: granted)
+        }
         permissions.startPolling(interval: 8.0)
+        observeAppReactivation()
         eventMonitor.start()
         signalHub.start()
         startHiddenDiscoverySync()
@@ -111,6 +115,10 @@ final class AppCoordinator {
         if let observer = workspaceTerminateObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             workspaceTerminateObserver = nil
+        }
+        if let observer = appReactivationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            appReactivationObserver = nil
         }
         permissions.stopPolling()
         eventMonitor.stop()
@@ -350,16 +358,28 @@ final class AppCoordinator {
         menuBarManager.onRequestOpenOnboarding = { [weak self] in
             self?.openOnboardingWindow()
         }
-        menuBarManager.onRequestTestPeek = { [weak self] in
-            self?.signalHub.sendTestPeek()
-            self?.notchPanelController?.updateMouseInteractivity()
-        }
         menuBarManager.onToggleHoverChanged = { [weak self] isHovering in
             self?.eventMonitor.handleEaveToggleHover(isHovering: isHovering)
         }
         menuBarManager.onWillHandleToggleInteraction = { [weak self] in
-            self?.eventMonitor.cancelPendingHover()
-            self?.secondRowBarController.hide()
+            guard let self else { return }
+            // Keep the pointer that is resting on the icon from re-triggering hover reveal right after the click.
+            self.eventMonitor.suppressHoverUntilPointerExits()
+        }
+        menuBarManager.shouldInterceptToggleClick = { [weak self] in
+            guard let self, self.secondRowBarController.isVisible else { return false }
+            // Hover already shows the floating second row: a click pins it open instead of
+            // swapping it for the inline expansion.
+            if self.secondRowBarController.isPinnedForPreview {
+                self.secondRowBarController.hide()
+            } else {
+                self.showSecondRowBar(anchorFrame: nil, pinnedForPreview: true)
+            }
+            return true
+        }
+        menuBarManager.isAutoRehidePaused = { [weak self] in
+            // Onboarding teaches ⌘-dragging around the divider; don't collapse it mid-lesson.
+            self?.onboardingWindow?.isVisible == true
         }
         menuBarManager.isPointerProtectedFromRehide = { [weak self] in
             guard let self else { return false }
@@ -403,7 +423,7 @@ final class AppCoordinator {
             switch self.settings.hoverDisplayMode {
             case .inline:
                 guard !self.menuBarManager.isHiddenExpanded else { return }
-                self.menuBarManager.expandHidden()
+                self.menuBarManager.expandHiddenFromHover()
             case .secondRow:
                 guard !self.menuBarManager.isHiddenExpanded else { return }
                 guard !self.secondRowBarController.isVisible else { return }
@@ -418,7 +438,9 @@ final class AppCoordinator {
                 self.secondRowBarController.hide()
             }
             if self.menuBarManager.isHiddenExpanded,
-               self.notchPanelController?.isPointInsideActiveSurface(loc) == false {
+               self.notchPanelController?.isPointInsideActiveSurface(loc) == false,
+               !self.menuBarManager.transientTargetHasOpenUI(),
+               self.onboardingWindow?.isVisible != true {
                 if self.menuBarManager.isTransientForwardExpansion || self.settings.rehideAutomatically {
                     self.menuBarManager.collapseAll()
                 }
@@ -438,6 +460,42 @@ final class AppCoordinator {
         eventMonitor.needsPointerTracking = { [weak self] in
             guard let self else { return false }
             return self.notchStateMachine.isInteractiveState || self.secondRowBarController.isVisible
+        }
+    }
+
+    enum HotKeyUpdateError: Error, Equatable {
+        case missingModifier
+        case duplicate(HotKeyAction)
+        case unavailable
+    }
+
+    /// Validates, registers, and persists a new shortcut. On failure the previous binding is restored
+    /// and the reason is returned so the UI can explain it instead of silently showing a dead combo.
+    @discardableResult
+    func updateHotKey(_ combo: KeyCombo?, for action: HotKeyAction) -> HotKeyUpdateError? {
+        let previous = settings.hotKey(for: action)
+        if let combo {
+            guard combo.isValidGlobalHotKey else { return .missingModifier }
+            if let other = HotKeyAction.allCases.first(where: { $0 != action && settings.hotKey(for: $0) == combo }) {
+                return .duplicate(other)
+            }
+            guard hotKeyManager.register(action: action, combo: combo) else {
+                hotKeyManager.register(action: action, combo: previous)
+                return .unavailable
+            }
+        } else {
+            hotKeyManager.register(action: action, combo: nil)
+        }
+        settings.setHotKey(combo, for: action)
+        return nil
+    }
+
+    /// Call while a shortcut recorder is capturing keys; pass false to restore the saved shortcuts.
+    func setHotKeysSuspended(_ suspended: Bool) {
+        if suspended {
+            hotKeyManager.suspendAll()
+        } else {
+            hotKeyManager.register(settings: settings)
         }
     }
 
@@ -502,9 +560,43 @@ final class AppCoordinator {
 
         observeWorkspaceAppChanges()
 
-        hiddenSyncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+        // Background safety-net rescan. App launch/quit, hover, and Search already trigger fresh scans,
+        // so this only needs to catch silent changes; skip it when a recent scan is still fresh.
+        hiddenSyncTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.refreshMenuBarItems()
+                guard let self else { return }
+                guard CFAbsoluteTimeGetCurrent() - self.lastMenuBarScanTime > 12.0 else { return }
+                await self.refreshMenuBarItems()
+            }
+        }
+    }
+
+    private var appReactivationObserver: Any?
+
+    /// Users grant Accessibility in System Settings and then come back; re-check right away instead of
+    /// waiting for the next 8s poll.
+    private func observeAppReactivation() {
+        appReactivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.permissions.refresh()
+            }
+        }
+    }
+
+    private func handleAccessibilityChanged(granted: Bool) {
+        guard granted else { return }
+        // The startup cold sweep bails out without permission, so run it now that AX works.
+        coldSweepTask?.cancel()
+        coldSweepTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshMenuBarItems()
+            let foundNew = await self.itemScanner.sweepUnscannedRegularAppsAsync()
+            if foundNew && !Task.isCancelled {
+                await self.refreshMenuBarItems()
             }
         }
     }

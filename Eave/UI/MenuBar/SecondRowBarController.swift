@@ -41,7 +41,7 @@ final class SecondRowBarController {
     private var appSwitchObserver: Any?
     private var presentationGeneration: UInt64 = 0
     private var lastAnchorFrame: CGRect?
-    private var isPinnedForPreview: Bool = false
+    private(set) var isPinnedForPreview: Bool = false
 
     private(set) var appearanceMode: AppAppearanceMode = .system
     private(set) var items: [MenuBarItemInfo] = []

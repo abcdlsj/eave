@@ -66,7 +66,7 @@ final class MenuBarClickForwarder {
     ) async {
         let needsTransientExpand = item.section != .visible && !menuBarManager.isHiddenExpanded
         if needsTransientExpand {
-            menuBarManager.expandTemporarilyForForwarding()
+            menuBarManager.expandTemporarilyForForwarding(targetPID: item.pid)
             // Allow WindowServer one brief layout frame to reposition the status item on screen.
             try? await Task.sleep(nanoseconds: 90_000_000)
         }
@@ -76,8 +76,19 @@ final class MenuBarClickForwarder {
             ? [kAXShowMenuAction as String]
             : [kAXPressAction as String, kAXShowMenuAction as String]
 
-        if AXIsProcessTrusted(), performAXAction(for: item, preferredActions: preferredActions) {
+        let isTrusted = AXIsProcessTrusted()
+        if isTrusted, performAXAction(for: item, preferredActions: preferredActions) {
             menuBarManager.postponeAutoRehide()
+            return
+        }
+
+        // Synthetic clicks are silently dropped by the system without Accessibility trust,
+        // so go straight to the app-activation fallback instead of a no-op flash.
+        guard isTrusted else {
+            if needsTransientExpand {
+                menuBarManager.collapseIfTransient()
+            }
+            activateApplication(runningApp: runningApp, bundleIdentifier: item.bundleIdentifier)
             return
         }
 
@@ -101,7 +112,7 @@ final class MenuBarClickForwarder {
         })
         let targetFrame: CGRect = refreshedItem?.frame ?? item.frame
 
-        if targetFrame.width > 0 && targetFrame.minX >= 0 {
+        if targetFrame.width > 0 && Self.isOnAnyDisplay(CGPoint(x: targetFrame.midX, y: targetFrame.midY)) {
             postSyntheticClick(at: CGPoint(x: targetFrame.midX, y: targetFrame.midY), button: button)
             menuBarManager.postponeAutoRehide()
             return
@@ -112,6 +123,16 @@ final class MenuBarClickForwarder {
             menuBarManager.collapseIfTransient()
         }
         activateApplication(runningApp: runningApp, bundleIdentifier: item.bundleIdentifier)
+    }
+
+    /// True when a CoreGraphics global point lies on a connected display (displays left of / above
+    /// the primary display have negative coordinates, so `minX >= 0` is not a valid check).
+    private static func isOnAnyDisplay(_ point: CGPoint) -> Bool {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return point.x >= 0 }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return point.x >= 0 }
+        return displays.prefix(Int(count)).contains { CGDisplayBounds($0).contains(point) }
     }
 
     private func activateApplication(runningApp: NSRunningApplication?, bundleIdentifier: String?) {
@@ -161,14 +182,26 @@ final class MenuBarClickForwarder {
             if !supportedActions.isEmpty && !supportedActions.contains(action) {
                 continue
             }
-            if AXUIElementPerformAction(target, action as CFString) == .success {
+            switch AXUIElementPerformAction(target, action as CFString) {
+            case .success:
                 return true
+            case .cannotComplete:
+                // AXPress on a status item often blocks until its menu stops tracking, so the short
+                // messaging timeout fires while the menu is actually open. Treat it as dispatched;
+                // following up with a synthetic click would close the menu again.
+                return true
+            default:
+                continue
             }
         }
         return false
     }
 
     private func matchAXChild(in children: [AXUIElement], for item: MenuBarItemInfo) -> AXUIElement {
+        // Bound every per-child IPC; the default ~6s timeout would freeze the main thread on a hung app.
+        for child in children {
+            AXUIElementSetMessagingTimeout(child, 0.15)
+        }
         if !item.title.isEmpty {
             if let byTitle = children.first(where: { child in
                 var titleRef: CFTypeRef?
