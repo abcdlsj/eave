@@ -11,6 +11,7 @@ struct HotKeyRecorderView: View {
     @State private var isHovered = false
     @State private var pulseDot = false
     @State private var monitor: Any?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 7) {
@@ -110,9 +111,13 @@ struct HotKeyRecorderView: View {
 
     private func startRecording() {
         isRecording = true
-        pulseDot = false
-        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+        if reduceMotion {
             pulseDot = true
+        } else {
+            pulseDot = false
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulseDot = true
+            }
         }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {

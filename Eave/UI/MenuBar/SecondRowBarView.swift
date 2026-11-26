@@ -205,6 +205,7 @@ struct SecondRowBarView: View {
 
     @State private var hoveredRowIndex: Int?
     @State private var hoveredGridPos: GridPosition?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var metrics: SecondRowLayoutMetrics {
         SecondRowLayoutMetrics.resolve(
@@ -267,7 +268,7 @@ struct SecondRowBarView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: metrics.horizontalSpacing) {
                     ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, item in
-                        let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredRowIndex)
+                        let mag = EaveDockMagnification.resolve(index: index, hoveredIndex: hoveredRowIndex, reduceMotion: reduceMotion)
                         SecondRowItemTile(
                             item: item,
                             badge: resolvedBadge(for: item),
@@ -309,7 +310,7 @@ struct SecondRowBarView: View {
                 HStack(spacing: metrics.horizontalSpacing) {
                     ForEach(Array(rowItems.enumerated()), id: \.element.id) { colIndex, item in
                         let pos = GridPosition(row: rowIndex, col: colIndex)
-                        let mag = EaveDockMagnification.resolve(index: colIndex, hoveredIndex: activeCol)
+                        let mag = EaveDockMagnification.resolve(index: colIndex, hoveredIndex: activeCol, reduceMotion: reduceMotion)
                         SecondRowItemTile(
                             item: item,
                             badge: resolvedBadge(for: item),
@@ -350,12 +351,13 @@ struct SecondRowBarView: View {
 
 private struct SecondRowSkeletonView: View {
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(0..<5, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(pulse ? 0.12 : 0.05))
+                    .fill(Color.primary.opacity(reduceMotion ? 0.08 : (pulse ? 0.12 : 0.05)))
                     .frame(width: 28, height: 28)
                     .animation(
                         .easeInOut(duration: 0.9)
@@ -366,7 +368,7 @@ private struct SecondRowSkeletonView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { pulse = true }
+        .onAppear { if !reduceMotion { pulse = true } }
     }
 }
 

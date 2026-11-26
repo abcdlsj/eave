@@ -14,6 +14,7 @@ struct NotchPeekView: View {
     @State private var arrivalScale: CGFloat = 0.84
     @State private var rippleScale: CGFloat = 1.0
     @State private var rippleOpacity: Double = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var resolved: AppIconService.ResolvedIcon {
         AppIconService.shared.resolveNotchIcon(
@@ -62,7 +63,7 @@ struct NotchPeekView: View {
             triggerArrivalOptics()
         }
         .task(id: "\(alert.id)-\(alert.timestamp.timeIntervalSince1970)-\(alert.loop)") {
-            guard alert.loop, alert.badge == nil, alert.style == .dot else { return }
+            guard !reduceMotion, alert.loop, alert.badge == nil, alert.style == .dot else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_200_000_000)
                 guard !Task.isCancelled else { break }
@@ -72,6 +73,10 @@ struct NotchPeekView: View {
     }
 
     private func triggerArrivalOptics() {
+        guard !reduceMotion else {
+            arrivalScale = 1.0
+            return
+        }
         // Crisp icon spring settle
         arrivalScale = 0.82
         withAnimation(.spring(response: 0.34, dampingFraction: 0.68)) {
@@ -111,7 +116,7 @@ struct NotchPeekView: View {
         }
         .id("\(alert.id)-\(alert.iconPath ?? "")-\(alert.symbolName ?? "")-\(alert.bundleIdentifier ?? "")")
         .transition(.opacity.combined(with: .scale(scale: 0.86)))
-        .scaleEffect(arrivalScale * (isHovered ? 1.08 : 1.0))
+        .scaleEffect(arrivalScale * (isHovered && !reduceMotion ? 1.08 : 1.0))
     }
 
     @ViewBuilder
@@ -128,7 +133,7 @@ struct NotchPeekView: View {
                 .minimumScaleFactor(0.85)
         } else if alert.style == .wave {
             NotchWaveBarsView(color: accentColor)
-                .scaleEffect(isHovered ? 1.12 : 1.0)
+                .scaleEffect(isHovered && !reduceMotion ? 1.12 : 1.0)
         } else {
             ZStack {
                 Circle()
@@ -140,7 +145,7 @@ struct NotchPeekView: View {
                     .fill(accentColor)
                     .frame(width: 6.5, height: 6.5)
                     .shadow(color: accentColor.opacity(0.42), radius: 3)
-                    .scaleEffect(isHovered ? 1.18 : 1.0)
+                    .scaleEffect(isHovered && !reduceMotion ? 1.18 : 1.0)
             }
         }
     }
@@ -151,6 +156,7 @@ struct NotchPeekView: View {
 struct NotchWaveBarsView: View {
     let color: Color
     @State private var phase = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let heights: [(CGFloat, CGFloat, Double)] = [
         (4.5, 10.5, 0.00),
@@ -175,7 +181,8 @@ struct NotchWaveBarsView: View {
         }
         .frame(height: 12, alignment: .center)
         .onAppear {
-            phase = true
+            // Reduce Motion: keep the bars at a static resting height.
+            if !reduceMotion { phase = true }
         }
     }
 }

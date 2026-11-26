@@ -12,6 +12,7 @@ struct NotchContainerView: View {
     @State private var rimSweepProgress: CGFloat = 0
     @State private var rimSweepOpacity: Double = 0
     @State private var rimSweepColor: Color = .white
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var geometry: NotchGeometry { geometryProvider() }
 
@@ -47,7 +48,7 @@ struct NotchContainerView: View {
                 }
             }
             .task(id: rimLoopIdentity) {
-                guard let config = activeLoopedRimConfig else { return }
+                guard !reduceMotion, let config = activeLoopedRimConfig else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 2_200_000_000)
                     guard !Task.isCancelled else { break }
@@ -90,6 +91,7 @@ struct NotchContainerView: View {
 
     /// Fires a restrained 0.72s accent light sweep along the lower notch perimeter.
     private func triggerRimSweep(accentHex: String?, source: NotchAlertSource) {
+        guard !reduceMotion else { return }
         if let hex = accentHex, !hex.isEmpty {
             rimSweepColor = Color(eaveHex: hex)
         } else if source == .dockBadge {
@@ -237,6 +239,7 @@ private struct NotchAmbientWingsView: View {
     @State private var breathe = false
     @State private var rippleScale: CGFloat = 1.0
     @State private var rippleOpacity: Double = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var primary: AmbientIndicator? { indicators.last }
 
@@ -284,12 +287,17 @@ private struct NotchAmbientWingsView: View {
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+            // Reduce Motion: hold the dot at its fully lit resting state instead of breathing.
+            if reduceMotion {
                 breathe = true
+            } else {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    breathe = true
+                }
             }
         }
         .task(id: "\(primary?.id ?? "")-\(primary?.loop ?? false)-\(primary?.style.rawValue ?? "")") {
-            guard let primary, primary.loop, primary.badge == nil, primary.style == .dot else { return }
+            guard !reduceMotion, let primary, primary.loop, primary.badge == nil, primary.style == .dot else { return }
             while !Task.isCancelled {
                 rippleScale = 1.0
                 rippleOpacity = 0.60
@@ -339,7 +347,7 @@ private struct NotchAmbientWingsView: View {
                 .minimumScaleFactor(0.85)
         } else if primary?.style == .wave {
             NotchWaveBarsView(color: accentColor)
-                .scaleEffect(isHovered ? 1.12 : 1.0)
+                .scaleEffect(isHovered && !reduceMotion ? 1.12 : 1.0)
         } else {
             // No badge provided -> quiet breathing accent dot (plus optional looped sonar ping).
             ZStack {
@@ -355,7 +363,7 @@ private struct NotchAmbientWingsView: View {
                     .frame(width: 5.5, height: 5.5)
                     .shadow(color: accentColor.opacity(breathe ? 0.45 : 0.12), radius: breathe ? 3 : 1)
                     .opacity(breathe ? 1.0 : 0.62)
-                    .scaleEffect(isHovered ? 1.18 : 1.0)
+                    .scaleEffect(isHovered && !reduceMotion ? 1.18 : 1.0)
             }
         }
     }

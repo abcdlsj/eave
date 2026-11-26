@@ -760,6 +760,7 @@ private struct OnboardingMenuBarDemoStage: View {
     /// 0 = expanded before drag, 1 = icon gliding left past dot, 2 = collapsed cleanly
     @State private var phase: Int = 0
     @State private var loopTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -867,6 +868,9 @@ private struct OnboardingMenuBarDemoStage: View {
             loopTask?.cancel()
             loopTask = nil
         }
+        .onChange(of: reduceMotion) { _, _ in
+            startAnimationLoop()
+        }
     }
 
     private var phaseCaption: String {
@@ -894,6 +898,12 @@ private struct OnboardingMenuBarDemoStage: View {
 
     private func startAnimationLoop() {
         loopTask?.cancel()
+        loopTask = nil
+        // Reduce Motion: hold a single static frame instead of looping the drag demo.
+        guard !reduceMotion else {
+            phase = 0
+            return
+        }
         loopTask = Task { @MainActor in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_900_000_000)

@@ -71,13 +71,18 @@ struct EaveDockMagnification: Equatable, Sendable {
 
     static let resting = EaveDockMagnification(scale: 1.0, liftY: 0.0, isPrimary: false)
 
-    static func resolve(index: Int, hoveredIndex: Int?) -> EaveDockMagnification {
+    /// When `reduceMotion` is true the hovered tile is still flagged as primary (for highlight), but never scales or lifts.
+    static func resolve(index: Int, hoveredIndex: Int?, reduceMotion: Bool = false) -> EaveDockMagnification {
         guard let hoveredIndex else { return .resting }
-        switch abs(index - hoveredIndex) {
+        let distance = abs(index - hoveredIndex)
+        if reduceMotion {
+            return EaveDockMagnification(scale: 1.0, liftY: 0.0, isPrimary: distance == 0)
+        }
+        switch distance {
         case 0:
-            return EaveDockMagnification(scale: 1.18, liftY: -3.5, isPrimary: true)
+            return EaveDockMagnification(scale: 1.11, liftY: -1.5, isPrimary: true)
         case 1:
-            return EaveDockMagnification(scale: 1.06, liftY: -1.0, isPrimary: false)
+            return EaveDockMagnification(scale: 1.03, liftY: -0.5, isPrimary: false)
         default:
             return .resting
         }
