@@ -15,7 +15,7 @@ A restrained, native macOS menu bar manager with textless Notch signals — buil
 
 ## Features
 
-- **Two-Section Menu Bar Hiding**: Organize menu bar items into *Visible* and *Hidden* sections (`⌘`-drag icons left of the dot divider). Click the Eave icon or press `⌥⌘H` to expand inline, with unified auto-rehide on inactivity or app switch.
+- **Two-Section Menu Bar Hiding**: Organize menu bar items into *Visible* and *Hidden* sections (`⌘`-drag icons left of the dot divider). Click the Eave icon or press `⌃⌥⌘H` to expand inline, with unified auto-rehide on inactivity or app switch. Keep the divider left of the Eave icon.
 - **Floating Second-Row Bar**: Hover over the Eave icon on any display to reveal hidden items in a clean floating second row (horizontal scroll or multi-row wrap) without expanding the top menu bar.
   - **Smart Click Routing**: Left-clicking regular windowed apps brings them directly to the front with zero menu bar flicker; menu-bar-only utilities (such as Tailscale or Clash) support both left-click and right-click forwarding.
 - **Textless Notch Signals & Watched Apps**: Single-line hardware-height wings flanking the MacBook notch — no intrusive text cards. Displays the app or sender icon on the left wing and a custom-colored accent dot, subtle 3-bar activity wave, or Fredoka-styled numeric badge on the right, with one-click deep-link or app activation.

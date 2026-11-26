@@ -34,7 +34,7 @@ Strictly directional dependencies: `App` -> `UI` / `Core` -> `Models`.
   - **Hover Eave** (across any connected display) reveals hidden items inline or in the floating **Second-Row Bar** (horizontal scroll or multi-row wrap, 120fps Dock magnification).
 - **Smart Click Routing**:
   - Regular windowed apps (`activationPolicy == .regular`) on left-click invoke `NSWorkspace.openApplication` directly — bringing/reopening the main window with **zero menu bar expansion**.
-  - Menu-bar-only utilities (`activationPolicy == .accessory`, e.g., Tailscale, Clash) and right-clicks transiently expand the hidden section so native menus/popovers anchor cleanly at the top-right, dispatch `AXPress` / `AXShowMenu` (or synthetic left/right `CGEvent` click), and collapse immediately once dismissed.
+  - Menu-bar-only utilities (`activationPolicy == .accessory`, e.g., Tailscale, Clash) and right-clicks transiently expand the hidden section so native menus/popovers anchor cleanly at the top-right, dispatch `AXPress` / `AXShowMenu` (or synthetic left/right `CGEvent` click), and collapse shortly after the target menu or popover closes (window-layer check, 120s ceiling).
 
 ### 2. Textless Notch State Machine
 - **Three States**: `.idle` (pass-through, invisible) ↔ `.ambient([AmbientIndicator])` (persistent wings) ↔ `.peek(NotchAlert)` (transient wings with one-shot arrival rim shimmer + sonar ping).
