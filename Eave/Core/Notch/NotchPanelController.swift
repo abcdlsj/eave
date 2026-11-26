@@ -138,14 +138,7 @@ final class NotchPanelController {
         let topY = geometry.isPhysicalNotch ? geometry.screenFrame.maxY : geometry.notchRect.maxY
         let centerX = geometry.notchRect.midX
 
-        let extraPadding: CGFloat
-        switch stateMachine.state {
-        case .peek(_, let expanded) where expanded:
-            extraPadding = 6
-        default:
-            extraPadding = 2
-        }
-
+        let extraPadding: CGFloat = 3
         let w = metrics.width + extraPadding * 2
         let h = metrics.height + extraPadding
         return CGRect(x: centerX - w / 2, y: topY - h, width: w, height: h)

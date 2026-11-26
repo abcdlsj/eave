@@ -28,7 +28,7 @@ struct NotchSurfaceMetrics: Equatable {
             )
         case .ambient:
             return NotchSurfaceMetrics(
-                width: baseW + 58,
+                width: baseW + 64,
                 height: baseH,
                 topRadius: 8,
                 bottomRadius: 12,
@@ -36,28 +36,16 @@ struct NotchSurfaceMetrics: Equatable {
                 shadowOpacity: 0.14,
                 isVisible: true
             )
-        case .peek(_, let expanded):
-            if expanded {
-                return NotchSurfaceMetrics(
-                    width: max(baseW + 172, 368),
-                    height: baseH + 66,
-                    topRadius: 12,
-                    bottomRadius: 20,
-                    shadowRadius: 16,
-                    shadowOpacity: 0.34,
-                    isVisible: true
-                )
-            } else {
-                return NotchSurfaceMetrics(
-                    width: baseW + 106,
-                    height: baseH,
-                    topRadius: 9,
-                    bottomRadius: 13.5,
-                    shadowRadius: 6,
-                    shadowOpacity: 0.18,
-                    isVisible: true
-                )
-            }
+        case .peek:
+            return NotchSurfaceMetrics(
+                width: baseW + 84,
+                height: baseH,
+                topRadius: 9,
+                bottomRadius: 13.5,
+                shadowRadius: 6,
+                shadowOpacity: 0.18,
+                isVisible: true
+            )
         }
     }
 }

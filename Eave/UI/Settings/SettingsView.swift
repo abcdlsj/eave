@@ -236,300 +236,335 @@ private struct GeneralSettingsTab: View {
                 subtitle: "Appearance, hover reveal behavior, and menu bar housekeeping."
             )
 
-            // Appearance & Core Behavior
-            EaveSettingsCard("Appearance & Startup") {
-                EaveSettingsSegmentedRow(
-                    "Appearance",
-                    subtitle: "Match macOS automatically or lock Eave to Light / Dark.",
-                    selection: $settings.appearanceMode,
-                    pickerWidth: 196
-                ) {
-                    ForEach(AppAppearanceMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .onChange(of: settings.appearanceMode) { _, _ in
-                    EaveHaptics.tick()
-                    coordinator.applyAppearance()
-                }
-
-                EaveCardDivider()
-
-                EaveSettingsToggleRow(
-                    "Launch Eave at login",
-                    subtitle: "Start quietly in the menu bar when you sign in.",
-                    isOn: Binding(
-                        get: { coordinator.launchAtLogin.isEnabled },
-                        set: { coordinator.launchAtLogin.setEnabled($0) }
-                    )
-                )
-
-                EaveCardDivider()
-
-                EaveSettingsToggleRow(
-                    "Auto-rehide expanded items",
-                    subtitle: "Collapses automatically after 8s of inactivity or when switching apps.",
-                    isOn: $settings.rehideAutomatically
-                )
-            }
-
-            // Hover Reveal with Refined Inset Secondary Controls
-            EaveSettingsCard("Hover Reveal") {
-                EaveSettingsToggleRow(
-                    "Hover Eave icon to reveal hidden items",
-                    subtitle: "Rest your pointer over the Eave menu bar icon to inspect hidden apps.",
-                    isOn: $settings.expandOnEaveHover.animation(EaveMotion.microSpring)
-                )
-                .onChange(of: settings.expandOnEaveHover) { _, _ in
-                    coordinator.syncHoverSettings()
-                }
-
-                if settings.expandOnEaveHover {
-                    EaveSettingsSubSection {
-                        EaveSettingsSegmentedRow(
-                            "Display style",
-                            subtitle: settings.hoverDisplayMode == .secondRow
-                                ? "Float hidden icons in a clean second row below the menu bar."
-                                : "Expand hidden items inline inside the macOS menu bar.",
-                            selection: $settings.hoverDisplayMode.animation(EaveMotion.microSpring),
-                            pickerWidth: 176,
-                            inset: true
-                        ) {
-                            ForEach(HoverDisplayMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .onChange(of: settings.hoverDisplayMode) { _, _ in
-                            EaveHaptics.tick()
-                            coordinator.syncHoverSettings()
-                        }
-
-                        EaveCardDivider(leadingInset: 12)
-
-                        EaveSettingsSliderRow(
-                            "Hover delay",
-                            subtitle: "Time pointer rests on the Eave icon before opening.",
-                            value: $settings.hoverDelaySeconds,
-                            in: 0.10...0.60,
-                            step: 0.05,
-                            valueText: String(format: "%.2fs", settings.hoverDelaySeconds),
-                            inset: true
-                        )
-
-                        if settings.hoverDisplayMode == .secondRow {
-                            EaveCardDivider(leadingInset: 12)
-
-                            EaveSettingsSegmentedRow(
-                                "Overflow layout",
-                                subtitle: settings.secondRowLayoutMode == .horizontalScroll
-                                    ? "Single sleek row with horizontal swipe."
-                                    : "Automatically wrap extra icons onto new rows.",
-                                selection: $settings.secondRowLayoutMode.animation(EaveMotion.microSpring),
-                                pickerWidth: 196,
-                                inset: true
-                            ) {
-                                ForEach(SecondRowLayoutMode.allCases) { mode in
-                                    Text(mode.title).tag(mode)
-                                }
-                            }
-                            .onChange(of: settings.secondRowLayoutMode) { _, _ in
-                                EaveHaptics.tick()
-                                coordinator.syncHoverSettings()
-                            }
-
-                            EaveCardDivider(leadingInset: 12)
-
-                            EaveSettingsSliderRow(
-                                "Items per row",
-                                value: Binding(
-                                    get: { Double(settings.secondRowItemsPerRow) },
-                                    set: { settings.secondRowItemsPerRow = Int($0.rounded()) }
-                                ),
-                                in: Double(EaveSettings.secondRowItemsPerRowRange.lowerBound)...Double(EaveSettings.secondRowItemsPerRowRange.upperBound),
-                                step: 1,
-                                valueText: "\(settings.secondRowItemsPerRow) / row",
-                                inset: true
-                            )
-                            .onChange(of: settings.secondRowItemsPerRow) { _, _ in
-                                coordinator.syncHoverSettings()
-                            }
-
-                            secondRowPreviewStage
-                                .padding(.horizontal, 12)
-                                .padding(.top, 2)
-                                .padding(.bottom, 12)
-                        }
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
-                }
-            }
-
-            // Collapsible Menu Bar Spacing Card
-            EaveSettingsCard("Menu Bar Density") {
-                Button {
-                    EaveHaptics.tick()
-                    withAnimation(EaveMotion.microSpring) {
-                        showSpacingOptions.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("System icon spacing")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.primary)
-                            Text("Tune macOS NSStatusItemSpacing · takes effect on app relaunch.")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(Int(spacingValue))pt · \(Int(paddingValue))pt")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                            .rotationEffect(.degrees(showSpacingOptions ? 90 : 0))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if showSpacingOptions {
-                    EaveSettingsSubSection {
-                        menuBarSpacingPreview
-                            .padding(.horizontal, 12)
-                            .padding(.top, 11)
-                            .padding(.bottom, 4)
-
-                        EaveSettingsSliderRow(
-                            "Icon spacing",
-                            value: $spacingValue,
-                            in: 4...20,
-                            step: 1,
-                            valueText: "\(Int(spacingValue)) pt",
-                            inset: true
-                        )
-
-                        EaveCardDivider(leadingInset: 12)
-
-                        EaveSettingsSliderRow(
-                            "Selection padding",
-                            value: $paddingValue,
-                            in: 2...16,
-                            step: 1,
-                            valueText: "\(Int(paddingValue)) pt",
-                            inset: true
-                        )
-
-                        HStack(spacing: 8) {
-                            Button {
-                                coordinator.spacingManager.apply(
-                                    spacing: Int(spacingValue),
-                                    selectionPadding: Int(paddingValue)
-                                )
-                                EaveHaptics.tap()
-                                withAnimation(EaveMotion.microSpring) {
-                                    appliedFeedback = true
-                                }
-                                Task {
-                                    try? await Task.sleep(nanoseconds: 1_800_000_000)
-                                    withAnimation(EaveMotion.hover) {
-                                        appliedFeedback = false
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 5) {
-                                    if appliedFeedback {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 10, weight: .bold))
-                                    }
-                                    Text(appliedFeedback ? "Applied" : "Apply Spacing")
-                                }
-                            }
-                            .buttonStyle(EaveProminentButtonStyle(isConfirmed: appliedFeedback))
-
-                            Button("Reset Default") {
-                                coordinator.spacingManager.resetToSystemDefault()
-                                withAnimation(EaveMotion.microSpring) {
-                                    spacingValue = 10
-                                    paddingValue = 8
-                                }
-                            }
-                            .buttonStyle(EaveSecondaryButtonStyle())
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.top, 4)
-                        .padding(.bottom, 12)
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
-                }
-            }
-
-            // Compact Accessibility Status Card (only expands actions when missing)
-            EaveSettingsCard("Privacy") {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2.5) {
-                        HStack(spacing: 7) {
-                            Text("Accessibility")
-                                .font(.system(size: 13, weight: .medium))
-                            HStack(spacing: 4.5) {
-                                Circle()
-                                    .fill(
-                                        coordinator.permissions.hasAccessibility
-                                            ? Color(red: 0.20, green: 0.72, blue: 0.42)
-                                            : Color(red: 0.90, green: 0.56, blue: 0.18)
-                                    )
-                                    .frame(width: 6, height: 6)
-                                Text(coordinator.permissions.hasAccessibility ? "Granted" : "Not Granted")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(EavePalette.pillFill(colorScheme)))
-                        }
-
-                        Text("Enables hidden-app discovery, Dock badge alerts, and menu-bar click forwarding. 100% local.")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    if coordinator.permissions.hasAccessibility {
-                        Button("Refresh") {
-                            EaveHaptics.tick()
-                            coordinator.permissions.refresh()
-                        }
-                        .buttonStyle(EaveSecondaryButtonStyle(compact: true))
-                    } else {
-                        HStack(spacing: 6) {
-                            Button("Grant") {
-                                coordinator.permissions.requestAccessibilityPrompt()
-                            }
-                            .buttonStyle(EaveProminentButtonStyle())
-                            Button("Settings") {
-                                coordinator.permissions.openAccessibilitySettings()
-                            }
-                            .buttonStyle(EaveSecondaryButtonStyle())
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-            }
+            appearanceAndStartupCard
+            hoverRevealCard
+            menuBarDensityCard
+            privacyCard
         }
         .onAppear {
             coordinator.permissions.refresh()
             coordinator.spacingManager.reload()
             if let s = coordinator.spacingManager.config.spacing { spacingValue = Double(s) }
             if let p = coordinator.spacingManager.config.selectionPadding { paddingValue = Double(p) }
+        }
+    }
+
+    private var appearanceAndStartupCard: some View {
+        EaveSettingsCard("Appearance & Startup") {
+            EaveSettingsSegmentedRow(
+                "Appearance",
+                subtitle: "Match macOS automatically or lock Eave to Light / Dark.",
+                selection: $settings.appearanceMode,
+                pickerWidth: 196
+            ) {
+                ForEach(AppAppearanceMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .onChange(of: settings.appearanceMode) { _, _ in
+                EaveHaptics.tick()
+                coordinator.applyAppearance()
+            }
+
+            EaveCardDivider()
+
+            EaveSettingsToggleRow(
+                "Launch Eave at login",
+                subtitle: "Start quietly in the menu bar when you sign in.",
+                isOn: Binding(
+                    get: { coordinator.launchAtLogin.isEnabled },
+                    set: { coordinator.launchAtLogin.setEnabled($0) }
+                )
+            )
+
+            EaveCardDivider()
+
+            EaveSettingsToggleRow(
+                "Auto-rehide expanded items",
+                subtitle: "Collapses automatically after 8s of inactivity or when switching apps.",
+                isOn: $settings.rehideAutomatically
+            )
+        }
+    }
+
+    private var hoverRevealCard: some View {
+        EaveSettingsCard("Hover Reveal") {
+            EaveSettingsToggleRow(
+                "Hover Eave icon to reveal hidden items",
+                subtitle: "Rest your pointer over the Eave menu bar icon to inspect hidden apps.",
+                isOn: $settings.expandOnEaveHover.animation(EaveMotion.microSpring)
+            )
+            .onChange(of: settings.expandOnEaveHover) { _, _ in
+                coordinator.syncHoverSettings()
+            }
+
+            if settings.expandOnEaveHover {
+                hoverRevealSubSection
+                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+            }
+        }
+    }
+
+    private var hoverRevealSubSection: some View {
+        EaveSettingsSubSection {
+            EaveSettingsSegmentedRow(
+                "Display style",
+                subtitle: settings.hoverDisplayMode == .secondRow
+                    ? "Float hidden icons in a clean second row below the menu bar."
+                    : "Expand hidden items inline inside the macOS menu bar.",
+                selection: $settings.hoverDisplayMode.animation(EaveMotion.microSpring),
+                pickerWidth: 176,
+                inset: true
+            ) {
+                ForEach(HoverDisplayMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .onChange(of: settings.hoverDisplayMode) { _, _ in
+                EaveHaptics.tick()
+                coordinator.syncHoverSettings()
+            }
+
+            EaveCardDivider(leadingInset: 12)
+
+            EaveSettingsSliderRow(
+                "Hover delay",
+                subtitle: "Time pointer rests on the Eave icon before opening.",
+                value: $settings.hoverDelaySeconds,
+                in: 0.10...0.60,
+                step: 0.05,
+                valueText: String(format: "%.2fs", settings.hoverDelaySeconds),
+                inset: true
+            )
+
+            if settings.hoverDisplayMode == .secondRow {
+                secondRowLayoutSubControls
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var secondRowLayoutSubControls: some View {
+        EaveCardDivider(leadingInset: 12)
+
+        EaveSettingsSegmentedRow(
+            "Overflow layout",
+            subtitle: settings.secondRowLayoutMode == .horizontalScroll
+                ? "Single sleek row with horizontal swipe."
+                : "Automatically wrap extra icons onto new rows.",
+            selection: $settings.secondRowLayoutMode.animation(EaveMotion.microSpring),
+            pickerWidth: 196,
+            inset: true
+        ) {
+            ForEach(SecondRowLayoutMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .onChange(of: settings.secondRowLayoutMode) { _, _ in
+            EaveHaptics.tick()
+            coordinator.syncHoverSettings()
+        }
+
+        EaveCardDivider(leadingInset: 12)
+
+        EaveSettingsSliderRow(
+            "Items per row",
+            value: Binding(
+                get: { Double(settings.secondRowItemsPerRow) },
+                set: { settings.secondRowItemsPerRow = Int($0.rounded()) }
+            ),
+            in: Double(EaveSettings.secondRowItemsPerRowRange.lowerBound)...Double(EaveSettings.secondRowItemsPerRowRange.upperBound),
+            step: 1,
+            valueText: "\(settings.secondRowItemsPerRow) / row",
+            inset: true
+        )
+        .onChange(of: settings.secondRowItemsPerRow) { _, _ in
+            coordinator.syncHoverSettings()
+        }
+
+        secondRowPreviewStage
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
+            .padding(.bottom, 12)
+    }
+
+    private var menuBarDensityCard: some View {
+        EaveSettingsCard("Menu Bar Density") {
+            Button {
+                EaveHaptics.tick()
+                withAnimation(EaveMotion.microSpring) {
+                    showSpacingOptions.toggle()
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("System icon spacing")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary)
+                        Text("Tune NSStatusItemSpacing · apps apply on relaunch; system icons require re-login.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("\(Int(spacingValue))pt · \(Int(paddingValue))pt")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(showSpacingOptions ? 90 : 0))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showSpacingOptions {
+                spacingSubSection
+                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+            }
+        }
+    }
+
+    private var spacingSubSection: some View {
+        EaveSettingsSubSection {
+            menuBarSpacingPreview
+                .padding(.horizontal, 12)
+                .padding(.top, 11)
+                .padding(.bottom, 4)
+
+            EaveSettingsSliderRow(
+                "Icon spacing",
+                value: $spacingValue,
+                in: 4...20,
+                step: 1,
+                valueText: "\(Int(spacingValue)) pt",
+                inset: true
+            )
+
+            EaveCardDivider(leadingInset: 12)
+
+            EaveSettingsSliderRow(
+                "Selection padding",
+                value: $paddingValue,
+                in: 2...16,
+                step: 1,
+                valueText: "\(Int(paddingValue)) pt",
+                inset: true
+            )
+
+            HStack(spacing: 8) {
+                Button {
+                    coordinator.spacingManager.apply(
+                        spacing: Int(spacingValue),
+                        selectionPadding: Int(paddingValue)
+                    )
+                    EaveHaptics.tap()
+                    withAnimation(EaveMotion.microSpring) {
+                        appliedFeedback = true
+                    }
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_600_000_000)
+                        withAnimation(EaveMotion.hover) {
+                            appliedFeedback = false
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        if appliedFeedback {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        Text(appliedFeedback ? "Applied" : "Apply Spacing")
+                    }
+                }
+                .buttonStyle(EaveProminentButtonStyle(isConfirmed: appliedFeedback))
+
+                Button("Reset Default") {
+                    coordinator.spacingManager.resetToSystemDefault()
+                    withAnimation(EaveMotion.microSpring) {
+                        spacingValue = 10
+                        paddingValue = 8
+                    }
+                }
+                .buttonStyle(EaveSecondaryButtonStyle())
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 1)
+                Text("Third-party apps pick up new spacing after relaunching. Built-in macOS menu bar items (Wi-Fi, Battery, Clock) require logging out and signing back in.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private var privacyCard: some View {
+        EaveSettingsCard("Privacy") {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2.5) {
+                    HStack(spacing: 7) {
+                        Text("Accessibility")
+                            .font(.system(size: 13, weight: .medium))
+                        HStack(spacing: 4.5) {
+                            Circle()
+                                .fill(
+                                    coordinator.permissions.hasAccessibility
+                                        ? Color(red: 0.20, green: 0.72, blue: 0.42)
+                                        : Color(red: 0.90, green: 0.56, blue: 0.18)
+                                )
+                                .frame(width: 6, height: 6)
+                            Text(coordinator.permissions.hasAccessibility ? "Granted" : "Not Granted")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(EavePalette.pillFill(colorScheme)))
+                    }
+
+                    Text("Enables hidden-app discovery, Dock badge alerts, and menu-bar click forwarding. 100% local.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                if coordinator.permissions.hasAccessibility {
+                    Button("Refresh") {
+                        EaveHaptics.tick()
+                        coordinator.permissions.refresh()
+                    }
+                    .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                } else {
+                    HStack(spacing: 6) {
+                        Button("Grant") {
+                            coordinator.permissions.requestAccessibilityPrompt()
+                        }
+                        .buttonStyle(EaveProminentButtonStyle())
+                        Button("Settings") {
+                            coordinator.permissions.openAccessibilitySettings()
+                        }
+                        .buttonStyle(EaveSecondaryButtonStyle())
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
         }
     }
 
@@ -683,7 +718,7 @@ private struct NotchSettingsTab: View {
     @State private var copiedURL = false
     @State private var copiedNotif = false
 
-    private let sampleURL = "open -g \"eave://notify?title=Build+Succeeded&subtitle=eave&badge=OK&symbol=checkmark.circle.fill\""
+    private let sampleURL = "open -g \"eave://notify?id=demo&symbol=sparkles&accent=%2334C759&url=eave://settings\""
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -704,201 +739,218 @@ private struct NotchSettingsTab: View {
             )
 
             notchPreviewStage
+            notificationsCard
+            watchedAppsCard
+            notchBridgeCard
+        }
+    }
 
-            // Unified Notch Notifications Card
-            EaveSettingsCard("Notifications") {
-                EaveSettingsToggleRow(
-                    "Show hidden app notifications",
-                    subtitle: "Unfurls Peek wings, subtle edge badges, and background status alerts around the camera.",
-                    isOn: $settings.enableNotchPeek.animation(EaveMotion.microSpring)
-                )
-                .onChange(of: settings.enableNotchPeek) { _, _ in
-                    coordinator.signalHub.syncSettings()
-                }
-
-                if settings.enableNotchPeek {
-                    EaveSettingsSubSection {
-                        EaveSettingsSliderRow(
-                            "Peek duration",
-                            subtitle: "How long a notification unfurls before smoothly retracting.",
-                            value: $settings.peekDurationSeconds,
-                            in: 2.0...10.0,
-                            step: 0.5,
-                            valueText: String(format: "%.1fs", settings.peekDurationSeconds),
-                            inset: true
-                        )
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
-                }
+    private var notificationsCard: some View {
+        EaveSettingsCard("Notifications") {
+            EaveSettingsToggleRow(
+                "Show hidden app notifications",
+                subtitle: "Unfurls Peek wings, subtle edge badges, and background status alerts around the camera.",
+                isOn: $settings.enableNotchPeek.animation(EaveMotion.microSpring)
+            )
+            .onChange(of: settings.enableNotchPeek) { _, _ in
+                coordinator.signalHub.syncSettings()
             }
 
-            // Watched Apps
-            EaveSettingsCard("Watched Applications") {
-                EaveSettingsToggleRow(
-                    "Automatically watch hidden apps",
-                    subtitle: "Tracking \(coordinator.signalHub.discoveredHiddenBundleIDs.count) hidden · \(settings.watchedBundleIDs.count) pinned.",
-                    isOn: $settings.watchHiddenAppsAutomatically
-                )
+            if settings.enableNotchPeek {
+                EaveSettingsSubSection {
+                    EaveSettingsSliderRow(
+                        "Peek duration",
+                        subtitle: "How long a notification unfurls before smoothly retracting.",
+                        value: $settings.peekDurationSeconds,
+                        in: 2.0...10.0,
+                        step: 0.5,
+                        valueText: String(format: "%.1fs", settings.peekDurationSeconds),
+                        inset: true
+                    )
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+            }
+        }
+    }
 
-                EaveCardDivider()
+    private var watchedAppsCard: some View {
+        EaveSettingsCard("Watched Applications") {
+            EaveSettingsToggleRow(
+                "Automatically watch hidden apps",
+                subtitle: "Tracking \(coordinator.signalHub.discoveredHiddenBundleIDs.count) hidden · \(settings.watchedBundleIDs.count) pinned.",
+                isOn: $settings.watchHiddenAppsAutomatically
+            )
 
-                HStack(spacing: 8) {
-                    Menu {
-                        ForEach(runningRegularApps, id: \.processIdentifier) { app in
-                            if let id = app.bundleIdentifier {
-                                Button(app.localizedName ?? id) {
-                                    withAnimation(EaveMotion.microSpring) {
-                                        settings.addWatchedBundleID(id)
-                                    }
+            EaveCardDivider()
+
+            HStack(spacing: 8) {
+                Menu {
+                    ForEach(runningRegularApps, id: \.processIdentifier) { app in
+                        if let id = app.bundleIdentifier {
+                            Button(app.localizedName ?? id) {
+                                withAnimation(EaveMotion.microSpring) {
+                                    settings.addWatchedBundleID(id)
                                 }
                             }
                         }
-                    } label: {
-                        Label("Add Running App", systemImage: "plus")
-                            .font(.system(size: 12, weight: .medium))
                     }
-                    .menuStyle(.borderedButton)
-                    .fixedSize()
+                } label: {
+                    Label("Add Running App", systemImage: "plus")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .menuStyle(.borderedButton)
+                .fixedSize()
 
-                    TextField("or bundle identifier...", text: $newBundleID)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
+                TextField("or bundle identifier...", text: $newBundleID)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
 
-                    Button("Add") {
+                Button("Add") {
+                    withAnimation(EaveMotion.microSpring) {
+                        settings.addWatchedBundleID(newBundleID)
+                        newBundleID = ""
+                    }
+                }
+                .buttonStyle(EaveSecondaryButtonStyle())
+                .disabled(newBundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+
+            if !settings.watchedBundleIDs.isEmpty {
+                ForEach(settings.watchedBundleIDs, id: \.self) { bundleID in
+                    EaveCardDivider()
+                    WatchedAppRow(bundleID: bundleID) {
                         withAnimation(EaveMotion.microSpring) {
-                            settings.addWatchedBundleID(newBundleID)
-                            newBundleID = ""
+                            settings.removeWatchedBundleID(bundleID)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var notchBridgeCard: some View {
+        EaveSettingsCard("NotchBridge") {
+            EaveSettingsToggleRow(
+                "Accept local CLI & app signals",
+                subtitle: "Push icon, accent dot color, optional numeric badge, and click callback via eave:// or DistributedNotification.",
+                isOn: $settings.enableNotchBridge.animation(EaveMotion.microSpring)
+            )
+
+            if settings.enableNotchBridge {
+                EaveCardDivider()
+
+                Button {
+                    EaveHaptics.tick()
+                    withAnimation(EaveMotion.microSpring) {
+                        showBridgeDetails.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Text("Protocol & Simulator")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(showBridgeDetails ? 90 : 0))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9.5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if showBridgeDetails {
+                    notchBridgeDetailsSubSection
+                        .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                }
+            }
+        }
+    }
+
+    private var notchBridgeDetailsSubSection: some View {
+        EaveSettingsSubSection {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("URL Scheme")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    copyButton(isCopied: copiedURL) {
+                        copyToClipboard(sampleURL)
+                        triggerCopied($copiedURL)
+                    }
+                }
+
+                Text(sampleURL)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.primary.opacity(0.86))
+                    .textSelection(.enabled)
+                    .padding(9.5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(EavePalette.cardFill(colorScheme))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.6)
+                    )
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 1.5) {
+                        Text("DistributedNotification")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Text(NotchBridge.distributedNotificationName.rawValue)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.primary.opacity(0.84))
+                            .textSelection(.enabled)
+                    }
+                    Spacer()
+                    copyButton(isCopied: copiedNotif) {
+                        copyToClipboard(NotchBridge.distributedNotificationName.rawValue)
+                        triggerCopied($copiedNotif)
+                    }
+                }
+
+                HStack(spacing: 7) {
+                    Button("Test Dot") {
+                        if let url = URL(string: "eave://notify?id=demo-dot&symbol=checkmark.circle.fill&accent=%2334C759&url=eave://settings") {
+                            coordinator.handleIncomingURL(url)
+                        }
+                    }
+                    .buttonStyle(EaveProminentButtonStyle())
+
+                    Button("Test Badge") {
+                        if let url = URL(string: "eave://notify?id=demo-badge&symbol=bell.fill&badge=3&accent=%23FF453A&url=eave://settings") {
+                            coordinator.handleIncomingURL(url)
                         }
                     }
                     .buttonStyle(EaveSecondaryButtonStyle())
-                    .disabled(newBundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
 
-                if !settings.watchedBundleIDs.isEmpty {
-                    ForEach(settings.watchedBundleIDs, id: \.self) { bundleID in
-                        EaveCardDivider()
-                        WatchedAppRow(bundleID: bundleID) {
-                            withAnimation(EaveMotion.microSpring) {
-                                settings.removeWatchedBundleID(bundleID)
-                            }
+                    Button("Test Wave") {
+                        if let url = URL(string: "eave://notify?id=demo-ambient&mode=ambient&style=wave&symbol=sparkles&accent=%2338BDF8&url=eave://settings") {
+                            coordinator.handleIncomingURL(url)
                         }
                     }
+                    .buttonStyle(EaveSecondaryButtonStyle())
+
+                    Button("Clear") {
+                        if let url = URL(string: "eave://clear?id=demo-ambient") {
+                            coordinator.handleIncomingURL(url)
+                        }
+                    }
+                    .buttonStyle(EaveSecondaryButtonStyle())
+
+                    Spacer()
                 }
+                .padding(.top, 2)
             }
-
-            // Folded NotchBridge Developer Card
-            EaveSettingsCard("NotchBridge") {
-                EaveSettingsToggleRow(
-                    "Accept local CLI & app notifications",
-                    subtitle: "Push custom peeks via eave:// URL Scheme or DistributedNotification.",
-                    isOn: $settings.enableNotchBridge.animation(EaveMotion.microSpring)
-                )
-
-                if settings.enableNotchBridge {
-                    EaveCardDivider()
-
-                    Button {
-                        EaveHaptics.tick()
-                        withAnimation(EaveMotion.microSpring) {
-                            showBridgeDetails.toggle()
-                        }
-                    } label: {
-                        HStack {
-                            Text("Protocol & Simulator")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.tertiary)
-                                .rotationEffect(.degrees(showBridgeDetails ? 90 : 0))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9.5)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    if showBridgeDetails {
-                        EaveSettingsSubSection {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Text("URL Scheme")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    copyButton(isCopied: copiedURL) {
-                                        copyToClipboard(sampleURL)
-                                        triggerCopied($copiedURL)
-                                    }
-                                }
-
-                                Text(sampleURL)
-                                    .font(.system(size: 10.5, design: .monospaced))
-                                    .foregroundStyle(.primary.opacity(0.86))
-                                    .textSelection(.enabled)
-                                    .padding(9.5)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .fill(EavePalette.cardFill(colorScheme))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .strokeBorder(EavePalette.cardBorder(colorScheme), lineWidth: 0.6)
-                                    )
-
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 1.5) {
-                                        Text("DistributedNotification")
-                                            .font(.system(size: 10.5, weight: .medium))
-                                            .foregroundStyle(.secondary)
-                                        Text(NotchBridge.distributedNotificationName.rawValue)
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.primary.opacity(0.84))
-                                            .textSelection(.enabled)
-                                    }
-                                    Spacer()
-                                    copyButton(isCopied: copiedNotif) {
-                                        copyToClipboard(NotchBridge.distributedNotificationName.rawValue)
-                                        triggerCopied($copiedNotif)
-                                    }
-                                }
-
-                                HStack(spacing: 7) {
-                                    Button("Test Peek") {
-                                        if let url = URL(string: "eave://notify?id=demo&title=Build+Succeeded&subtitle=NotchBridge+is+ready&badge=OK&symbol=checkmark") {
-                                            coordinator.handleIncomingURL(url)
-                                        }
-                                    }
-                                    .buttonStyle(EaveProminentButtonStyle())
-
-                                    Button("Test Ambient") {
-                                        if let url = URL(string: "eave://notify?id=demo-ambient&mode=ambient&title=Agent+Running&badge=1") {
-                                            coordinator.handleIncomingURL(url)
-                                        }
-                                    }
-                                    .buttonStyle(EaveSecondaryButtonStyle())
-
-                                    Button("Clear") {
-                                        if let url = URL(string: "eave://clear?id=demo-ambient") {
-                                            coordinator.handleIncomingURL(url)
-                                        }
-                                    }
-                                    .buttonStyle(EaveSecondaryButtonStyle())
-
-                                    Spacer()
-                                }
-                                .padding(.top, 2)
-                            }
-                            .padding(12)
-                        }
-                        .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
-                    }
-                }
-            }
+            .padding(12)
         }
     }
 

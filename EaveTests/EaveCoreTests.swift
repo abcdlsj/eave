@@ -51,22 +51,20 @@ final class EaveCoreTests: XCTestCase {
         let indicator = AmbientIndicator(
             id: "dock.com.example.chat",
             source: .dockBadge,
-            title: "Chat",
             badge: "2",
-            symbolName: nil,
-            accentHex: "#EF4444",
-            bundleIdentifier: "com.example.chat",
-            targetURL: nil
+            accentHex: "#FF453A",
+            bundleIdentifier: "com.example.chat"
         )
         sm.upsertAmbient(indicator)
         XCTAssertEqual(sm.state, .ambient([indicator]))
 
-        let alert = NotchAlert(source: .dockBadge, title: "Chat", badge: "3")
+        let alert = NotchAlert(source: .dockBadge, badge: "3", bundleIdentifier: "com.example.chat")
         sm.presentPeek(alert)
-        XCTAssertEqual(sm.state, .peek(alert, expanded: false))
+        XCTAssertEqual(sm.state, .peek(alert))
 
         sm.setHovering(true)
-        XCTAssertEqual(sm.state, .peek(alert, expanded: true))
+        XCTAssertTrue(sm.isHovering)
+        XCTAssertEqual(sm.state, .peek(alert))
 
         sm.dismissPeek()
         XCTAssertEqual(sm.state, .ambient([indicator]))
@@ -112,25 +110,45 @@ final class EaveCoreTests: XCTestCase {
     // MARK: - BridgePayload Parsing Tests
 
     func testBridgeURLParsing() throws {
+        // Textless signal with custom local icon, accent hex, numeric badge, and callback URL.
         let url = try XCTUnwrap(
-            URL(string: "eave://notify?id=job1&title=Deploy+Done&subtitle=prod&badge=OK&symbol=sparkles&duration=99")
+            URL(string: "eave://notify?id=job1&icon=/tmp/my+icon.png&symbol=sparkles&accent=%2334C759&badge=12&url=sumi://inbox&duration=99")
         )
         let payload = try XCTUnwrap(BridgePayload.parse(url: url))
 
         XCTAssertEqual(payload.id, "job1")
         XCTAssertEqual(payload.mode, .peek)
-        XCTAssertEqual(payload.title, "Deploy Done")
-        XCTAssertEqual(payload.subtitle, "prod")
-        XCTAssertEqual(payload.badge, "OK")
+        XCTAssertEqual(payload.iconPath, "/tmp/my+icon.png")
         XCTAssertEqual(payload.symbolName, "sparkles")
+        XCTAssertEqual(payload.accentHex, "#34C759")
+        XCTAssertEqual(payload.badge, "12")
+        XCTAssertEqual(payload.targetURL?.absoluteString, "sumi://inbox")
         XCTAssertEqual(payload.duration, 30.0) // Clamped to max 30s.
+
+        // Non-numeric text badges are stripped so Notch never renders arbitrary text.
+        let textBadgeURL = try XCTUnwrap(URL(string: "eave://notify?id=dot1&badge=OK&accent=%2338BDF8"))
+        let textBadgePayload = try XCTUnwrap(BridgePayload.parse(url: textBadgeURL))
+        XCTAssertNil(textBadgePayload.badge)
+        XCTAssertEqual(textBadgePayload.accentHex, "#38BDF8")
+
+        // Numeric overflow count like "99+" is allowed; omitted badge remains nil (dot-only).
+        XCTAssertEqual(BridgePayload.sanitizedNumericBadge("99+"), "99+")
+        XCTAssertNil(BridgePayload.sanitizedNumericBadge("hello"))
+        XCTAssertNil(BridgePayload.sanitizedNumericBadge("+"))
+
+        // Optional activity wave style
+        let waveURL = try XCTUnwrap(URL(string: "eave://notify?id=agent&mode=ambient&style=wave&symbol=sparkles&accent=%2338BDF8"))
+        let wavePayload = try XCTUnwrap(BridgePayload.parse(url: waveURL))
+        XCTAssertEqual(wavePayload.mode, .ambient)
+        XCTAssertEqual(wavePayload.style, .wave)
+        XCTAssertNil(wavePayload.badge)
 
         let clearURL = try XCTUnwrap(URL(string: "eave://clear?id=job1"))
         let clearPayload = try XCTUnwrap(BridgePayload.parse(url: clearURL))
         XCTAssertEqual(clearPayload.mode, .clear)
         XCTAssertEqual(clearPayload.id, "job1")
 
-        let invalidURL = try XCTUnwrap(URL(string: "https://example.com/notify?title=Nope"))
+        let invalidURL = try XCTUnwrap(URL(string: "https://example.com/notify?symbol=sparkles"))
         XCTAssertNil(BridgePayload.parse(url: invalidURL))
     }
 
@@ -138,14 +156,18 @@ final class EaveCoreTests: XCTestCase {
         let info: [AnyHashable: Any] = [
             "id": "agent-1",
             "mode": "ambient",
-            "title": "Agent Active",
-            "badge": "2",
+            "icon": "/tmp/agent.png",
+            "accent": "#38BDF8",
+            "badge": 2,
+            "url": "sumi://agent/1",
             "duration": 6.0
         ]
         let payload = try XCTUnwrap(BridgePayload.parse(userInfo: info))
         XCTAssertEqual(payload.mode, .ambient)
-        XCTAssertEqual(payload.title, "Agent Active")
+        XCTAssertEqual(payload.iconPath, "/tmp/agent.png")
+        XCTAssertEqual(payload.accentHex, "#38BDF8")
         XCTAssertEqual(payload.badge, "2")
+        XCTAssertEqual(payload.targetURL?.absoluteString, "sumi://agent/1")
         XCTAssertEqual(payload.duration, 6.0)
     }
 
@@ -197,14 +219,17 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(idle.width, 200)
         XCTAssertEqual(idle.height, 38)
 
-        let alert = NotchAlert(source: .bridge, title: "Done", badge: "OK")
-        let compactPeek = NotchSurfaceMetrics.resolve(for: .peek(alert, expanded: false), geometry: geom)
-        let expandedPeek = NotchSurfaceMetrics.resolve(for: .peek(alert, expanded: true), geometry: geom)
+        let alert = NotchAlert(source: .bridge, badge: "3", symbolName: "sparkles", accentHex: "#34C759")
+        let ambient = NotchSurfaceMetrics.resolve(for: .ambient([]), geometry: geom)
+        let peek = NotchSurfaceMetrics.resolve(for: .peek(alert), geometry: geom)
 
-        XCTAssertTrue(compactPeek.isVisible)
-        XCTAssertGreaterThan(compactPeek.width, idle.width)
-        XCTAssertGreaterThan(expandedPeek.width, compactPeek.width)
-        XCTAssertGreaterThan(expandedPeek.height, compactPeek.height)
+        XCTAssertTrue(ambient.isVisible)
+        XCTAssertTrue(peek.isVisible)
+        XCTAssertGreaterThan(ambient.width, idle.width)
+        XCTAssertGreaterThan(peek.width, ambient.width)
+        // Strictly single-line hardware height (no downward text expansion).
+        XCTAssertEqual(ambient.height, idle.height)
+        XCTAssertEqual(peek.height, idle.height)
     }
 
     func testClickForwardingStrategyRouting() {

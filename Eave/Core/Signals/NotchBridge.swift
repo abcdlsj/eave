@@ -1,10 +1,10 @@
 import Foundation
 
 /// Local automation bridge allowing external scripts, CLIs, and self-written apps
-/// to display peeks or ambient status dots inside Eave's Notch.
+/// to display textless icon + accent dot/count signals inside Eave's Notch with click callbacks.
 ///
 /// Supported transports:
-/// 1. URL Scheme: `eave://notify?title=...&subtitle=...&badge=...&symbol=...&mode=peek|ambient`
+/// 1. URL Scheme: `eave://notify?id=...&icon=/path/to/icon.png&symbol=...&bundleID=...&accent=%2334C759&badge=3&url=...&mode=peek|ambient`
 ///    and `eave://clear?id=...`
 /// 2. DistributedNotificationCenter: name `com.abcdlsj.eave.notch.notify`
 @MainActor

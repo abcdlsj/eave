@@ -2,12 +2,16 @@ import SwiftUI
 
 /// Root SwiftUI surface hosted inside NotchPanel.
 /// Uses ONE persistent pure-black obsidian shell whose geometry and corner curves continuously morph
-/// with liquid-spring physics across `idle`, `ambient`, and `peek` — zero neon rims, pure hardware cohesion.
+/// with liquid-spring physics across `idle`, `ambient`, and `peek` — strictly single-line hardware height.
 struct NotchContainerView: View {
     let stateMachine: NotchStateMachine
     let geometryProvider: () -> NotchGeometry
     let onAlertAction: (NotchAlert) -> Void
     let onAmbientAction: (AmbientIndicator) -> Void
+
+    @State private var rimSweepProgress: CGFloat = 0
+    @State private var rimSweepOpacity: Double = 0
+    @State private var rimSweepColor: Color = .white
 
     private var geometry: NotchGeometry { geometryProvider() }
 
@@ -25,11 +29,9 @@ struct NotchContainerView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                // Single persistent pure-black hardware shell (shadow strictly on static shell for 120fps).
                 notchShell(metrics: metrics)
                     .frame(width: metrics.width, height: metrics.height)
 
-                // State content clipped cleanly inside the morphing silhouette.
                 stateContent
                     .frame(width: metrics.width, height: metrics.height, alignment: .top)
                     .clipShape(shellClipShape(metrics: metrics))
@@ -37,10 +39,35 @@ struct NotchContainerView: View {
             .opacity(metrics.isVisible ? 1 : 0)
             .allowsHitTesting(metrics.isVisible)
             .animation(stateAnimation, value: stateMachine.state)
+            .onChange(of: stateMachine.state) { _, newState in
+                if case .peek(let alert) = newState {
+                    triggerRimSweep(for: alert)
+                }
+            }
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Fires a single restrained 0.72s accent light sweep along the lower notch perimeter on peek arrival.
+    private func triggerRimSweep(for alert: NotchAlert) {
+        if let hex = alert.accentHex, !hex.isEmpty {
+            rimSweepColor = Color(eaveHex: hex)
+        } else if alert.source == .dockBadge {
+            rimSweepColor = Color(red: 1.0, green: 0.27, blue: 0.23)
+        } else {
+            rimSweepColor = Color.white.opacity(0.85)
+        }
+
+        rimSweepProgress = 0.0
+        rimSweepOpacity = 0.85
+        withAnimation(.easeOut(duration: 0.72)) {
+            rimSweepProgress = 1.25
+        }
+        withAnimation(.easeIn(duration: 0.34).delay(0.40)) {
+            rimSweepOpacity = 0.0
+        }
     }
 
     @ViewBuilder
@@ -64,19 +91,14 @@ struct NotchContainerView: View {
             )
             .transition(.opacity)
 
-        case .peek(let alert, let expanded):
+        case .peek(let alert):
             NotchPeekView(
                 alert: alert,
-                expanded: expanded,
                 notchWidth: baseW,
                 notchHeight: baseH,
                 onPrimaryAction: {
                     EaveHaptics.tick()
                     onAlertAction(alert)
-                },
-                onDismiss: {
-                    EaveHaptics.tick()
-                    stateMachine.dismissPeek()
                 }
             )
             .transition(.opacity)
@@ -91,8 +113,7 @@ struct NotchContainerView: View {
         }
     }
 
-    /// Pure optical `#000000` obsidian shell whose top edge disappears seamlessly into the MacBook bezel,
-    /// finished only by a razor-thin neutral titanium rim along the lower perimeter.
+    /// Pure optical `#000000` obsidian shell whose top edge disappears seamlessly into the MacBook bezel.
     @ViewBuilder
     private func notchShell(metrics: NotchSurfaceMetrics) -> some View {
         if geometry.isPhysicalNotch {
@@ -114,31 +135,59 @@ struct NotchContainerView: View {
                         ),
                         lineWidth: 0.6
                     )
+
+                // One-shot arrival accent shimmer along the bottom rim (zero cost at rest).
+                if rimSweepOpacity > 0.01 {
+                    NotchBottomRimShape(topCornerRadius: metrics.topRadius, bottomCornerRadius: metrics.bottomRadius)
+                        .trim(
+                            from: max(0, rimSweepProgress - 0.32),
+                            to: min(1, rimSweepProgress)
+                        )
+                        .stroke(
+                            rimSweepColor.opacity(rimSweepOpacity),
+                            style: StrokeStyle(lineWidth: 1.15, lineCap: .round)
+                        )
+                        .shadow(color: rimSweepColor.opacity(rimSweepOpacity * 0.65), radius: 3)
+                }
             }
         } else {
-            RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous)
-                .fill(Color(red: 0.04, green: 0.04, blue: 0.045).opacity(0.96))
-                .shadow(
-                    color: .black.opacity(metrics.shadowOpacity),
-                    radius: metrics.shadowRadius,
-                    y: metrics.shadowRadius > 0 ? 6 : 0
-                )
-                .overlay(
+            ZStack {
+                RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous)
+                    .fill(Color(red: 0.04, green: 0.04, blue: 0.045).opacity(0.96))
+                    .shadow(
+                        color: .black.opacity(metrics.shadowOpacity),
+                        radius: metrics.shadowRadius,
+                        y: metrics.shadowRadius > 0 ? 6 : 0
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.15), .white.opacity(0.06)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 0.6
+                            )
+                    )
+
+                if rimSweepOpacity > 0.01 {
                     RoundedRectangle(cornerRadius: metrics.bottomRadius, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.15), .white.opacity(0.06)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 0.6
+                        .trim(
+                            from: max(0, rimSweepProgress - 0.32),
+                            to: min(1, rimSweepProgress)
                         )
-                )
+                        .stroke(
+                            rimSweepColor.opacity(rimSweepOpacity),
+                            style: StrokeStyle(lineWidth: 1.1, lineCap: .round)
+                        )
+                }
+            }
         }
     }
 }
 
-// MARK: - Quiet Architectural Ambient Wings
+// MARK: - Quiet Architectural Ambient Wings (Icon + Accent Dot, Wave, or Optional Count)
 
 private struct NotchAmbientWingsView: View {
     let indicators: [AmbientIndicator]
@@ -149,10 +198,22 @@ private struct NotchAmbientWingsView: View {
     @State private var isHovered = false
     @State private var breathe = false
 
-    private var primary: AmbientIndicator? { indicators.first }
+    private var primary: AmbientIndicator? { indicators.last }
 
-    /// Crisp restrained status color: Apple notification crimson for Dock badges, warm silver for ambient signals.
-    private var dotColor: Color {
+    private var resolvedIcon: AppIconService.ResolvedIcon? {
+        guard let primary else { return nil }
+        return AppIconService.shared.resolveNotchIcon(
+            iconPath: primary.iconPath,
+            symbolName: primary.symbolName,
+            bundleIdentifier: primary.bundleIdentifier,
+            accentHex: primary.accentHex
+        )
+    }
+
+    private var accentColor: Color {
+        if let hex = primary?.accentHex, !hex.isEmpty {
+            return Color(eaveHex: hex)
+        }
         if primary?.source == .dockBadge {
             return Color(red: 1.0, green: 0.27, blue: 0.23)
         }
@@ -164,23 +225,14 @@ private struct NotchAmbientWingsView: View {
             if let primary { onTap(primary) }
         } label: {
             HStack(spacing: 0) {
-                // Left wing: quiet precision LED dot (no loud neon halo).
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 5, height: 5)
-                    .opacity(breathe ? 1.0 : 0.58)
-                    .frame(width: 24, height: notchHeight)
+                leftWing
+                    .frame(width: 26, height: notchHeight)
 
                 Spacer(minLength: 0)
-                    .frame(width: max(notchWidth - 6, 124))
+                    .frame(width: max(notchWidth - 4, 124))
 
-                // Right wing: whisper-clean tabular count.
-                Text(primary?.badge ?? "\(indicators.count)")
-                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .foregroundStyle(.white.opacity(isHovered ? 0.96 : 0.72))
-                    .frame(width: 24, height: notchHeight)
+                rightWing
+                    .frame(width: 26, height: notchHeight)
             }
             .padding(.horizontal, 5)
             .contentShape(Rectangle())
@@ -196,6 +248,54 @@ private struct NotchAmbientWingsView: View {
                 breathe = true
             }
         }
-        .help(indicators.map(\.title).joined(separator: ", "))
+    }
+
+    @ViewBuilder
+    private var leftWing: some View {
+        if let icon = resolvedIcon {
+            if let image = icon.image {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 15, height: 15)
+                    .opacity(isHovered ? 1.0 : 0.90)
+            } else if let symbol = icon.symbolName {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(isHovered ? 0.98 : 0.80))
+            }
+        } else {
+            Circle()
+                .fill(accentColor)
+                .frame(width: 5, height: 5)
+        }
+    }
+
+    @ViewBuilder
+    private var rightWing: some View {
+        if let badge = primary?.badge, !badge.isEmpty {
+            Text(badge)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .foregroundStyle(
+                    (primary?.accentHex != nil || primary?.source == .dockBadge)
+                        ? accentColor
+                        : .white.opacity(isHovered ? 0.98 : 0.78)
+                )
+        } else if primary?.style == .wave {
+            NotchWaveBarsView(color: accentColor)
+                .scaleEffect(isHovered ? 1.12 : 1.0)
+        } else {
+            // No badge provided -> quiet breathing accent dot, never forces a number.
+            Circle()
+                .fill(accentColor)
+                .frame(width: 5.5, height: 5.5)
+                .shadow(color: accentColor.opacity(breathe ? 0.45 : 0.12), radius: breathe ? 3 : 1)
+                .opacity(breathe ? 1.0 : 0.62)
+                .scaleEffect(isHovered ? 1.18 : 1.0)
+        }
     }
 }

@@ -66,16 +66,31 @@ enum NotchAlertSource: String, Sendable, Codable {
     case system
 }
 
-/// Transient notification presented as a Notch Peek wing + optional expanded card.
+/// Visual style for a textless Notch right-wing indicator when no numeric badge is provided.
+enum NotchSignalStyle: String, Sendable, Equatable, Codable {
+    /// Quiet accent dot (default; one-shot sonar ping on peek arrival).
+    case dot
+    /// Minimal 3-bar breathing wave for active background work (e.g. AI agents, builds).
+    case wave
+}
+
+/// Transient textless notification signal presented as single-line wings flanking the hardware notch.
 struct NotchAlert: Identifiable, Equatable, Sendable {
     let id: String
     let source: NotchAlertSource
-    let title: String
-    let subtitle: String?
+    /// Optional numeric badge (e.g. "3", "99+"). When nil, renders a clean accent indicator dot or wave.
     let badge: String?
+    /// Visual style when `badge` is nil (defaults to `.dot`).
+    let style: NotchSignalStyle
+    /// Optional local image file path for custom sender icon.
+    let iconPath: String?
+    /// Optional SF Symbol name.
     let symbolName: String?
+    /// Optional `#RRGGBB` hex color for the indicator dot, wave, or badge pill.
     let accentHex: String?
+    /// Optional owning application bundle identifier (used for icon fallback and click activation).
     let bundleIdentifier: String?
+    /// Optional callback URL opened when clicking the Notch wings.
     let targetURL: URL?
     let duration: TimeInterval
     let timestamp: Date
@@ -83,9 +98,9 @@ struct NotchAlert: Identifiable, Equatable, Sendable {
     init(
         id: String = UUID().uuidString,
         source: NotchAlertSource,
-        title: String,
-        subtitle: String? = nil,
         badge: String? = nil,
+        style: NotchSignalStyle = .dot,
+        iconPath: String? = nil,
         symbolName: String? = nil,
         accentHex: String? = nil,
         bundleIdentifier: String? = nil,
@@ -95,9 +110,9 @@ struct NotchAlert: Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.source = source
-        self.title = title
-        self.subtitle = subtitle
-        self.badge = badge
+        self.badge = BridgePayload.sanitizedNumericBadge(badge)
+        self.style = style
+        self.iconPath = iconPath
         self.symbolName = symbolName
         self.accentHex = accentHex
         self.bundleIdentifier = bundleIdentifier
@@ -107,23 +122,46 @@ struct NotchAlert: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Persistent low-profile status dot shown along the edge of the notch.
+/// Persistent low-profile visual signal flanking the hardware notch (icon + accent dot, wave, or optional count).
 struct AmbientIndicator: Identifiable, Equatable, Sendable {
     let id: String
     let source: NotchAlertSource
-    let title: String
     let badge: String?
+    let style: NotchSignalStyle
+    let iconPath: String?
     let symbolName: String?
     let accentHex: String?
     let bundleIdentifier: String?
     let targetURL: URL?
+
+    init(
+        id: String,
+        source: NotchAlertSource,
+        badge: String? = nil,
+        style: NotchSignalStyle = .dot,
+        iconPath: String? = nil,
+        symbolName: String? = nil,
+        accentHex: String? = nil,
+        bundleIdentifier: String? = nil,
+        targetURL: URL? = nil
+    ) {
+        self.id = id
+        self.source = source
+        self.badge = BridgePayload.sanitizedNumericBadge(badge)
+        self.style = style
+        self.iconPath = iconPath
+        self.symbolName = symbolName
+        self.accentHex = accentHex
+        self.bundleIdentifier = bundleIdentifier
+        self.targetURL = targetURL
+    }
 }
 
-/// Unified state of the Notch panel.
+/// Unified state of the Notch panel (strictly single-line hardware-height wings; no text sheets).
 enum NotchState: Equatable, Sendable {
     case idle
     case ambient([AmbientIndicator])
-    case peek(NotchAlert, expanded: Bool)
+    case peek(NotchAlert)
 }
 
 /// Mode requested by an external NotchBridge payload.
@@ -133,18 +171,40 @@ enum BridgeMode: String, Sendable, Equatable {
     case clear
 }
 
-/// Parsed payload from URL Scheme (`eave://notify?...`) or DistributedNotification.
+/// Parsed textless payload from URL Scheme (`eave://notify?...`) or DistributedNotification.
+/// Accepts only icon (`icon` / `symbol` / `bundleID`), callback (`url`), accent color (`accent`),
+/// optional numeric badge (`badge`), duration, mode, and id. Text fields are intentionally ignored.
 struct BridgePayload: Equatable, Sendable {
     let id: String
     let mode: BridgeMode
-    let title: String
-    let subtitle: String?
     let badge: String?
+    let style: NotchSignalStyle
+    let iconPath: String?
     let symbolName: String?
     let accentHex: String?
     let bundleIdentifier: String?
     let targetURL: URL?
     let duration: TimeInterval
+
+    /// Enforces strictly numeric badges (e.g. "1", "24", "99+") so arbitrary text cannot appear in the Notch.
+    static func sanitizedNumericBadge(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 4 else { return nil }
+
+        let chars = Array(trimmed)
+        var hasDigit = false
+        for (idx, ch) in chars.enumerated() {
+            if ch.isASCII && ch.isNumber {
+                hasDigit = true
+            } else if ch == "+" && idx == chars.count - 1 && hasDigit {
+                continue
+            } else {
+                return nil
+            }
+        }
+        return hasDigit ? trimmed : nil
+    }
 
     /// Parses an `eave://notify?...` or `eave://clear?...` URL.
     static func parse(url: URL) -> BridgePayload? {
@@ -157,10 +217,8 @@ struct BridgePayload: Equatable, Sendable {
         let items = Dictionary(
             (components.queryItems ?? []).compactMap { item -> (String, String)? in
                 guard let value = item.value, !value.isEmpty else { return nil }
-                // URLComponents decodes percent escapes but leaves '+' untouched from form-encoded URLs.
                 let key = item.name.lowercased()
-                let normalized = (key == "url") ? value : value.replacingOccurrences(of: "+", with: " ")
-                return (key, normalized)
+                return (key, value)
             },
             uniquingKeysWith: { _, latest in latest }
         )
@@ -177,20 +235,16 @@ struct BridgePayload: Equatable, Sendable {
         }
 
         let id = items["id"] ?? items["bundleid"] ?? UUID().uuidString
-        let title = items["title"] ?? (mode == .clear ? "" : "Eave")
-        if mode != .clear && title.isEmpty {
-            return nil
-        }
-
         let duration = items["duration"].flatMap(Double.init) ?? 4.5
         let targetURL = items["url"].flatMap(URL.init(string:))
+        let style = items["style"].flatMap { NotchSignalStyle(rawValue: $0.lowercased()) } ?? .dot
 
         return BridgePayload(
             id: id,
             mode: mode,
-            title: title,
-            subtitle: items["subtitle"],
-            badge: items["badge"],
+            badge: sanitizedNumericBadge(items["badge"]),
+            style: style,
+            iconPath: items["icon"],
             symbolName: items["symbol"],
             accentHex: items["accent"],
             bundleIdentifier: items["bundleid"],
@@ -203,17 +257,14 @@ struct BridgePayload: Equatable, Sendable {
     static func parse(userInfo: [AnyHashable: Any]) -> BridgePayload? {
         func string(_ key: String) -> String? {
             if let value = userInfo[key] as? String, !value.isEmpty { return value }
+            if let num = userInfo[key] as? Int { return String(num) }
             return nil
         }
 
         let modeRaw = string("mode")?.lowercased() ?? "peek"
         let mode = BridgeMode(rawValue: modeRaw) ?? .peek
-        let id = string("id") ?? string("bundleID") ?? UUID().uuidString
-        let title = string("title") ?? ""
-
-        if mode != .clear && title.isEmpty {
-            return nil
-        }
+        let id = string("id") ?? string("bundleID") ?? string("bundleId") ?? UUID().uuidString
+        let style = string("style").flatMap { NotchSignalStyle(rawValue: $0.lowercased()) } ?? .dot
 
         let duration: TimeInterval
         if let num = userInfo["duration"] as? Double {
@@ -227,9 +278,9 @@ struct BridgePayload: Equatable, Sendable {
         return BridgePayload(
             id: id,
             mode: mode,
-            title: title,
-            subtitle: string("subtitle"),
-            badge: string("badge"),
+            badge: sanitizedNumericBadge(string("badge")),
+            style: style,
+            iconPath: string("icon") ?? string("iconPath"),
             symbolName: string("symbol"),
             accentHex: string("accent"),
             bundleIdentifier: string("bundleID") ?? string("bundleId"),

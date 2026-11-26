@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Unified deterministic state machine governing Notch presentation:
-/// `idle` <-> `ambient` <-> `peek(alert, expanded)`.
+/// `idle` <-> `ambient` <-> `peek(alert)`.
 @MainActor
 @Observable
 final class NotchStateMachine {
@@ -17,18 +17,8 @@ final class NotchStateMachine {
 
     func presentPeek(_ alert: NotchAlert) {
         peekDismissTask?.cancel()
-        state = .peek(alert, expanded: false)
+        state = .peek(alert)
         schedulePeekDismiss(after: alert.duration)
-    }
-
-    func setPeekExpanded(_ expanded: Bool) {
-        guard case .peek(let alert, _) = state else { return }
-        state = .peek(alert, expanded: expanded)
-        if expanded {
-            peekDismissTask?.cancel()
-        } else {
-            schedulePeekDismiss(after: min(alert.duration, 2.5))
-        }
     }
 
     func dismissPeek() {
@@ -69,17 +59,13 @@ final class NotchStateMachine {
 
     func setHovering(_ hovering: Bool) {
         isHovering = hovering
-        switch state {
-        case .peek(let alert, _):
+        if case .peek = state {
             if hovering {
+                // Pause auto-dismiss while the user moves to click the Notch wings.
                 peekDismissTask?.cancel()
-                state = .peek(alert, expanded: true)
             } else {
-                state = .peek(alert, expanded: false)
-                schedulePeekDismiss(after: 1.8)
+                schedulePeekDismiss(after: 1.2)
             }
-        default:
-            break
         }
     }
 

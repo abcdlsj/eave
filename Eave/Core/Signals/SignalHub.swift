@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// Aggregates signals from DockBadgeMonitor, MenuBarAXWatcher, and NotchBridge,
-/// routing filtered notifications into the NotchStateMachine.
+/// routing filtered textless visual signals into the NotchStateMachine.
 @MainActor
 final class SignalHub {
     private let settings: EaveSettings
@@ -66,11 +66,9 @@ final class SignalHub {
     func sendTestPeek() {
         let alert = NotchAlert(
             source: .system,
-            title: "Eave",
-            subtitle: "Hidden app notifications appear right here",
             badge: "3",
             symbolName: "bell.fill",
-            accentHex: nil,
+            accentHex: "#34C759",
             duration: settings.peekDurationSeconds
         )
         stateMachine.presentPeek(alert)
@@ -112,8 +110,8 @@ final class SignalHub {
             self?.effectiveWatchedBundleIDs() ?? []
         }
 
-        menuBarAXWatcher.onStatusTextChanged = { [weak self] bundleID, appName, statusText in
-            self?.handleMenuBarAXChange(bundleID: bundleID, appName: appName, statusText: statusText)
+        menuBarAXWatcher.onStatusTextChanged = { [weak self] bundleID, _, _ in
+            self?.handleMenuBarAXChange(bundleID: bundleID)
         }
 
         bridge.onPayloadReceived = { [weak self] payload in
@@ -139,12 +137,9 @@ final class SignalHub {
                 AmbientIndicator(
                     id: "dock.\(bundleID)",
                     source: .dockBadge,
-                    title: snap.appName,
                     badge: snap.badge,
-                    symbolName: nil,
-                    accentHex: "#EF4444",
-                    bundleIdentifier: bundleID,
-                    targetURL: nil
+                    accentHex: "#FF453A",
+                    bundleIdentifier: bundleID
                 )
             )
         }
@@ -153,26 +148,20 @@ final class SignalHub {
         let alert = NotchAlert(
             id: "dock.\(latest.bundleIdentifier).\(latest.badge)",
             source: .dockBadge,
-            title: latest.appName,
-            subtitle: "New notification badge",
             badge: latest.badge,
-            symbolName: nil,
-            accentHex: "#EF4444",
+            accentHex: "#FF453A",
             bundleIdentifier: latest.bundleIdentifier,
             duration: settings.peekDurationSeconds
         )
         stateMachine.presentPeek(alert)
     }
 
-    private func handleMenuBarAXChange(bundleID: String, appName: String, statusText: String) {
+    private func handleMenuBarAXChange(bundleID: String) {
         guard settings.enableNotchPeek else { return }
         let alert = NotchAlert(
             id: "ax.\(bundleID)",
             source: .menuBarAX,
-            title: appName,
-            subtitle: statusText,
             badge: nil,
-            symbolName: "menubar.rectangle",
             accentHex: "#60A5FA",
             bundleIdentifier: bundleID,
             duration: settings.peekDurationSeconds
@@ -194,24 +183,27 @@ final class SignalHub {
                 AmbientIndicator(
                     id: key,
                     source: .bridge,
-                    title: payload.title,
                     badge: payload.badge,
-                    symbolName: payload.symbolName ?? "sparkle",
-                    accentHex: payload.accentHex ?? "#38BDF8",
+                    style: payload.style,
+                    iconPath: payload.iconPath,
+                    symbolName: payload.symbolName,
+                    accentHex: payload.accentHex,
                     bundleIdentifier: payload.bundleIdentifier,
                     targetURL: payload.targetURL
                 )
             )
         case .peek:
             guard settings.enableNotchPeek else { return }
+            // Replacing an active ambient signal of the same id (e.g. "running" -> "done") cleanly clears it.
+            stateMachine.removeAmbient(id: key)
             let alert = NotchAlert(
                 id: key,
                 source: .bridge,
-                title: payload.title,
-                subtitle: payload.subtitle,
                 badge: payload.badge,
-                symbolName: payload.symbolName ?? "bolt.fill",
-                accentHex: payload.accentHex ?? "#38BDF8",
+                style: payload.style,
+                iconPath: payload.iconPath,
+                symbolName: payload.symbolName,
+                accentHex: payload.accentHex,
                 bundleIdentifier: payload.bundleIdentifier,
                 targetURL: payload.targetURL,
                 duration: payload.duration

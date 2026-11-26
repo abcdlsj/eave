@@ -70,25 +70,91 @@ final class AppIconService {
         )
     }
 
-    /// Resolves icon + ambient glow for a bundle identifier (used in Notch Peek & Ambient states).
-    func resolve(bundleIdentifier: String?, fallbackSymbol: String?, fallbackAccentHex: String?) -> ResolvedIcon {
+    /// Resolves a Notch wing icon with strict priority:
+    /// 1. Local image file path (`iconPath`)
+    /// 2. Explicit SF Symbol (`symbolName`)
+    /// 3. Installed macOS app icon (`bundleIdentifier`)
+    /// 4. Neutral fallback SF Symbol
+    func resolveNotchIcon(
+        iconPath: String?,
+        symbolName: String?,
+        bundleIdentifier: String?,
+        accentHex: String?
+    ) -> ResolvedIcon {
+        let resolvedAccent = Color(eaveHex: accentHex)
+
+        if let rawPath = iconPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawPath.isEmpty,
+           let customImage = localFileIcon(at: rawPath) {
+            return ResolvedIcon(
+                image: customImage,
+                symbolName: nil,
+                accentColor: resolvedAccent,
+                isTemplate: false
+            )
+        }
+
+        if let rawSymbol = symbolName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawSymbol.isEmpty,
+           NSImage(systemSymbolName: rawSymbol, accessibilityDescription: nil) != nil {
+            return ResolvedIcon(
+                image: nil,
+                symbolName: rawSymbol,
+                accentColor: resolvedAccent,
+                isTemplate: true
+            )
+        }
+
         if let bundleID = bundleIdentifier,
            let icon = highResAppIcon(bundleID: bundleID, pid: nil, cacheKey: bundleID) {
-            let color = fallbackAccentHex != nil
-                ? Color(eaveHex: fallbackAccentHex)
+            let color = accentHex != nil
+                ? resolvedAccent
                 : dominantColor(for: icon, cacheKey: bundleID)
             return ResolvedIcon(image: icon, symbolName: nil, accentColor: color, isTemplate: false)
         }
 
         return ResolvedIcon(
             image: nil,
-            symbolName: fallbackSymbol ?? "bell.badge.fill",
-            accentColor: Color(eaveHex: fallbackAccentHex),
+            symbolName: "bell.fill",
+            accentColor: resolvedAccent,
             isTemplate: true
         )
     }
 
+    /// Resolves icon + ambient glow for a bundle identifier (used in Settings & watched app rows).
+    func resolve(bundleIdentifier: String?, fallbackSymbol: String?, fallbackAccentHex: String?) -> ResolvedIcon {
+        resolveNotchIcon(
+            iconPath: nil,
+            symbolName: bundleIdentifier == nil ? fallbackSymbol : nil,
+            bundleIdentifier: bundleIdentifier,
+            accentHex: fallbackAccentHex
+        )
+    }
+
     // MARK: - High-Res Icon Loading
+
+    private func localFileIcon(at rawPath: String) -> NSImage? {
+        let expanded = (rawPath as NSString).expandingTildeInPath
+        let fileURL = URL(fileURLWithPath: expanded).standardizedFileURL
+        guard fileURL.isFileURL,
+              FileManager.default.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+
+        let mtime = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date)?
+            .timeIntervalSinceReferenceDate ?? 0
+        let cacheKey = "file.\(fileURL.path).\(Int(mtime))"
+        if let cached = iconCache[cacheKey] {
+            return cached
+        }
+
+        guard let loaded = NSImage(contentsOfFile: fileURL.path), loaded.isValid else {
+            return nil
+        }
+        let rasterized = Self.rasterize(loaded, pointSize: 36, scale: 2)
+        iconCache[cacheKey] = rasterized
+        return rasterized
+    }
 
     private func highResAppIcon(bundleID: String?, pid: pid_t?, cacheKey: String) -> NSImage? {
         if let cached = iconCache[cacheKey] {
