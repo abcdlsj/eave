@@ -43,6 +43,8 @@ final class MenuBarManager: NSObject {
     private(set) var isContextMenuOpen: Bool = false
     /// pid of the app whose menu/popover was opened by a transient forwarded click.
     private(set) var transientForwardTargetPID: pid_t?
+    /// pid of the app most recently activated while the pointer was interacting with the expanded hidden bar.
+    private var lastMenuBarInteractedPID: pid_t?
     /// True when the current expansion came from hovering the Eave icon (not an explicit click/hotkey).
     private(set) var isHoverExpansion: Bool = false
     private var hoverExpansionTime: CFAbsoluteTime = 0
@@ -54,8 +56,6 @@ final class MenuBarManager: NSObject {
     var onExpansionChanged: ((Bool) -> Void)?
     var onToggleHoverChanged: ((Bool) -> Void)?
     var onWillHandleToggleInteraction: (() -> Void)?
-    /// Lets the coordinator consume a left click (e.g. to pin a visible Second Row) before it toggles.
-    var shouldInterceptToggleClick: (() -> Bool)?
     var isPointerProtectedFromRehide: (() -> Bool)?
     /// Returns true while auto-rehide must be paused entirely (e.g. onboarding teaching ⌘-drag).
     var isAutoRehidePaused: (() -> Bool)?
@@ -101,6 +101,7 @@ final class MenuBarManager: NSObject {
     func expandHidden() {
         isTransientForwardExpansion = false
         transientForwardTargetPID = nil
+        lastMenuBarInteractedPID = nil
         isHoverExpansion = false
         isHiddenExpanded = true
         applySeparatorLengths()
@@ -122,6 +123,7 @@ final class MenuBarManager: NSObject {
         isTransientForwardExpansion = true
         transientForwardTargetPID = targetPID
         transientForwardStartTime = CFAbsoluteTimeGetCurrent()
+        lastMenuBarInteractedPID = nil
         isHoverExpansion = false
         isHiddenExpanded = true
         applySeparatorLengths()
@@ -187,6 +189,7 @@ final class MenuBarManager: NSObject {
         isHiddenExpanded = false
         isTransientForwardExpansion = false
         transientForwardTargetPID = nil
+        lastMenuBarInteractedPID = nil
         isHoverExpansion = false
         applySeparatorLengths()
         onExpansionChanged?(false)
@@ -482,10 +485,6 @@ final class MenuBarManager: NSObject {
             return
         }
 
-        if shouldInterceptToggleClick?() == true {
-            return
-        }
-
         // A click arriving right after a hover reveal means "I want these open", so keep them
         // open (and turn the hover reveal into a regular expansion) rather than collapsing.
         if isHiddenExpanded, isHoverExpansion,
@@ -574,6 +573,22 @@ final class MenuBarManager: NSObject {
                    activatedPID == target {
                     return
                 }
+                // Clicking an icon in the expanded hidden section (or its popover/menu) often
+                // activates its owning app. Keep the bar expanded while the pointer stays there.
+                if self.isCursorInProtectedMenuBarRegion()
+                    || self.isPointInMenuBarPopoverOrMenu(NSEvent.mouseLocation) {
+                    if let activatedPID, activatedPID != ProcessInfo.processInfo.processIdentifier {
+                        self.lastMenuBarInteractedPID = activatedPID
+                    }
+                    self.postponeAutoRehide()
+                    return
+                }
+                if let activatedPID,
+                   activatedPID == self.lastMenuBarInteractedPID,
+                   Self.hasOpenTransientUI(pid: activatedPID) {
+                    self.postponeAutoRehide()
+                    return
+                }
                 self.collapseAll()
             }
         }
@@ -620,7 +635,7 @@ final class MenuBarManager: NSObject {
                 if self.isTransientForwardExpansion {
                     // Keep the status item anchored while the forwarded menu/popover is still open;
                     // collapse shortly after it is dismissed.
-                    if self.transientTargetHasOpenUI() || self.isCursorInMenuBar() {
+                    if self.transientTargetHasOpenUI() || self.isCursorInProtectedMenuBarRegion() {
                         self.scheduleTransientPoll()
                         return
                     }
@@ -628,7 +643,8 @@ final class MenuBarManager: NSObject {
                     return
                 }
                 if self.isAutoRehidePaused?() == true
-                    || self.isCursorInMenuBar()
+                    || self.isCursorInProtectedMenuBarRegion()
+                    || self.isPointInMenuBarPopoverOrMenu(NSEvent.mouseLocation)
                     || self.isPointerProtectedFromRehide?() == true {
                     self.scheduleAutoRehideIfNeeded()
                     return
@@ -643,7 +659,7 @@ final class MenuBarManager: NSObject {
         rehideTimer = Timer.scheduledTimer(withTimeInterval: Self.transientForwardPollSeconds, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isHiddenExpanded, self.isTransientForwardExpansion else { return }
-                if self.transientTargetHasOpenUI() || self.isCursorInMenuBar() {
+                if self.transientTargetHasOpenUI() || self.isCursorInProtectedMenuBarRegion() {
                     self.scheduleTransientPoll()
                 } else {
                     self.collapseAll()
@@ -652,13 +668,164 @@ final class MenuBarManager: NSObject {
         }
     }
 
-    private func isCursorInMenuBar() -> Bool {
-        let loc = NSEvent.mouseLocation
-        for screen in NSScreen.screens where screen.frame.contains(loc) {
-            let barHeight = max(screen.safeAreaInsets.top, 28)
-            return loc.y >= screen.frame.maxY - barHeight - 4
+    /// True when the cursor sits over the hidden section of the menu bar (left of the `•` divider
+    /// and right of any physical notch), the `•` divider itself, or Eave's toggle icon.
+    func isCursorInProtectedMenuBarRegion() -> Bool {
+        isPointInProtectedMenuBarRegion(NSEvent.mouseLocation)
+    }
+
+    func isPointInProtectedMenuBarRegion(_ loc: CGPoint) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.insetBy(dx: 0, dy: -1).contains(loc) }) else {
+            return false
         }
-        return false
+        let visibleTopInset = max(0, screen.frame.maxY - screen.visibleFrame.maxY)
+        let barHeight = max(screen.safeAreaInsets.top, visibleTopInset, 28)
+
+        let primarySepFrame = hiddenSeparator.button?.window?.frame
+        let primaryToggle = toggleItemFrame
+        let sepOnScreen: CGRect?
+        if let primarySepFrame, primarySepFrame.width > 0,
+           screen.frame.insetBy(dx: 0, dy: -1).contains(CGPoint(x: primarySepFrame.midX, y: primarySepFrame.midY)) {
+            sepOnScreen = primarySepFrame
+        } else {
+            sepOnScreen = nil
+        }
+
+        let toggleOnScreen = allToggleItemFrames.first { frame in
+            frame.width > 0 && screen.frame.insetBy(dx: 0, dy: -1).contains(CGPoint(x: frame.midX, y: frame.midY))
+        }
+
+        return Self.isPointInProtectedMenuBarRegion(
+            point: loc,
+            screenFrame: screen.frame,
+            menuBarHeight: barHeight,
+            auxiliaryTopRightArea: screen.auxiliaryTopRightArea,
+            separatorFrameOnScreen: sepOnScreen,
+            toggleFrameOnScreen: toggleOnScreen,
+            primarySeparatorFrame: primarySepFrame,
+            primaryToggleFrame: primaryToggle
+        )
+    }
+
+    /// Pure geometry classifier for whether a cursor point protects the expanded menu bar from auto-rehide.
+    nonisolated static func isPointInProtectedMenuBarRegion(
+        point: CGPoint,
+        screenFrame: CGRect,
+        menuBarHeight: CGFloat,
+        auxiliaryTopRightArea: CGRect?,
+        separatorFrameOnScreen: CGRect?,
+        toggleFrameOnScreen: CGRect?,
+        primarySeparatorFrame: CGRect?,
+        primaryToggleFrame: CGRect?
+    ) -> Bool {
+        guard screenFrame.insetBy(dx: 0, dy: -1).contains(point) else { return false }
+        let barHeight = max(menuBarHeight, 28)
+        guard point.y >= screenFrame.maxY - barHeight - 4 else { return false }
+
+        // Keep the bar open while the pointer still rests on Eave's own toggle icon.
+        if let toggle = toggleFrameOnScreen, toggle.width > 0, toggle.height > 0,
+           toggle.insetBy(dx: -4, dy: -4).contains(point) {
+            return true
+        }
+
+        let resolvedSeparatorMaxX: CGFloat?
+        if let sep = separatorFrameOnScreen, sep.width > 0 {
+            resolvedSeparatorMaxX = sep.maxX
+        } else if let targetToggle = toggleFrameOnScreen, targetToggle.width > 0,
+                  let primarySep = primarySeparatorFrame, primarySep.width > 0,
+                  let primaryToggle = primaryToggleFrame, primaryToggle.width > 0 {
+            // Visible-section width between `•` and Eave is consistent across displays; project `•` onto this screen.
+            let visibleWidth = primaryToggle.maxX - primarySep.maxX
+            resolvedSeparatorMaxX = visibleWidth >= 0 ? (targetToggle.maxX - visibleWidth) : targetToggle.minX
+        } else if let targetToggle = toggleFrameOnScreen, targetToggle.width > 0 {
+            resolvedSeparatorMaxX = targetToggle.minX
+        } else {
+            resolvedSeparatorMaxX = nil
+        }
+
+        guard let separatorMaxX = resolvedSeparatorMaxX else {
+            return true
+        }
+
+        let hiddenMinX: CGFloat
+        if let rightAux = auxiliaryTopRightArea, rightAux.width > 0 {
+            hiddenMinX = rightAux.minX
+        } else {
+            hiddenMinX = screenFrame.minX
+        }
+
+        return point.x >= hiddenMinX && point.x <= separatorMaxX + 4
+    }
+
+    /// True when `appKitPoint` lies inside an open menu bar dropdown menu or popover panel belonging
+    /// to another application, so interacting with an opened hidden item's UI never collapses the bar mid-click.
+    func isPointInMenuBarPopoverOrMenu(_ appKitPoint: CGPoint) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.insetBy(dx: 0, dy: -1).contains(appKitPoint) }) else {
+            return false
+        }
+        let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
+            ?? NSScreen.screens.first?.frame.height
+            ?? screen.frame.height
+        let cgPoint = CGPoint(x: appKitPoint.x, y: primaryHeight - appKitPoint.y)
+        let screenCGTop = primaryHeight - screen.frame.maxY
+        let visibleTopInset = max(0, screen.frame.maxY - screen.visibleFrame.maxY)
+        let menuBarHeight = max(screen.safeAreaInsets.top, visibleTopInset, 28)
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let preferredPID = lastMenuBarInteractedPID ?? transientForwardTargetPID
+
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else {
+            return false
+        }
+
+        return list.contains { entry in
+            guard let ownerInt = entry[kCGWindowOwnerPID as String] as? Int else { return false }
+            let bounds = Self.windowBounds(entry)
+            guard bounds.contains(cgPoint) else { return false }
+            let layer = entry[kCGWindowLayer as String] as? Int ?? 0
+            let alpha = entry[kCGWindowAlpha as String] as? Double ?? 1.0
+            return Self.isMenuBarPopoverOrMenuWindow(
+                layer: layer,
+                bounds: bounds,
+                alpha: alpha,
+                ownerPID: pid_t(ownerInt),
+                ownPID: ownPID,
+                screenCGTop: screenCGTop,
+                menuBarHeight: menuBarHeight,
+                preferredPID: preferredPID
+            )
+        }
+    }
+
+    /// Pure classifier distinguishing menu bar menus/popovers from normal windows, the Dock,
+    /// status item icon slots, and unrelated floating windows (e.g. Picture-in-Picture).
+    nonisolated static func isMenuBarPopoverOrMenuWindow(
+        layer: Int,
+        bounds: CGRect,
+        alpha: Double = 1.0,
+        ownerPID: pid_t,
+        ownPID: pid_t,
+        screenCGTop: CGFloat,
+        menuBarHeight: CGFloat,
+        preferredPID: pid_t? = nil
+    ) -> Bool {
+        guard ownerPID != ownPID else { return false }
+        guard alpha > 0.01 else { return false }
+        guard bounds.width > 4, bounds.height > 4 else { return false }
+        let dockLayer = Int(CGWindowLevelForKey(.dockWindow))
+        let mainMenuLayer = Int(CGWindowLevelForKey(.mainMenuWindow))
+        let popUpMenuLayer = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        guard layer > 0, layer != dockLayer, layer != mainMenuLayer else { return false }
+        // Exclude status item icon windows sitting strictly within the menu bar band.
+        guard bounds.maxY > screenCGTop + menuBarHeight + 4 else { return false }
+        if layer >= popUpMenuLayer {
+            return true
+        }
+        if let preferredPID, ownerPID == preferredPID {
+            return true
+        }
+        // Floating popovers and menu-bar panels (layer 3 / 8 / 25 / 26) anchor directly beneath the menu bar.
+        return bounds.minY >= screenCGTop - 4 && bounds.minY <= screenCGTop + menuBarHeight + 60
     }
 }
 

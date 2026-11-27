@@ -365,17 +365,11 @@ final class AppCoordinator {
             guard let self else { return }
             // Keep the pointer that is resting on the icon from re-triggering hover reveal right after the click.
             self.eventMonitor.suppressHoverUntilPointerExits()
-        }
-        menuBarManager.shouldInterceptToggleClick = { [weak self] in
-            guard let self, self.secondRowBarController.isVisible else { return false }
-            // Hover already shows the floating second row: a click pins it open instead of
-            // swapping it for the inline expansion.
-            if self.secondRowBarController.isPinnedForPreview {
+            // Dismiss any visible Second Row immediately so a left-click expands inline (and a
+            // right-click opens the context menu) without waiting for the hover card to fade out.
+            if self.secondRowBarController.isVisible {
                 self.secondRowBarController.hide()
-            } else {
-                self.showSecondRowBar(anchorFrame: nil, pinnedForPreview: true)
             }
-            return true
         }
         menuBarManager.isAutoRehidePaused = { [weak self] in
             // Onboarding teaches ⌘-dragging around the divider; don't collapse it mid-lesson.
@@ -445,7 +439,9 @@ final class AppCoordinator {
                self.notchPanelController?.isPointInsideActiveSurface(loc) == false,
                !self.menuBarManager.transientTargetHasOpenUI(),
                self.onboardingWindow?.isVisible != true {
-                if self.menuBarManager.isTransientForwardExpansion || self.settings.rehideAutomatically {
+                if self.menuBarManager.isPointInMenuBarPopoverOrMenu(loc) {
+                    self.menuBarManager.postponeAutoRehide()
+                } else if self.menuBarManager.isTransientForwardExpansion || self.settings.rehideAutomatically {
                     self.menuBarManager.collapseAll()
                 }
             }

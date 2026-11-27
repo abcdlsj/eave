@@ -171,6 +171,7 @@ final class SecondRowBarController {
 
         let targetFrame = computePanelFrame(anchorFrame: anchorFrame, screen: screen)
         let hostPanel = ensurePanel(initialFrame: targetFrame)
+        hostPanel.ignoresMouseEvents = false
         hostPanel.mapsVerticalScrollToHorizontal = layoutMode == .horizontalScroll
         if hostPanel.frame != targetFrame {
             hostPanel.setFrame(targetFrame, display: false)
@@ -281,6 +282,7 @@ final class SecondRowBarController {
         isVisible = false
 
         guard let panel else { return }
+        panel.ignoresMouseEvents = true
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = Self.fadeOutSeconds
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)

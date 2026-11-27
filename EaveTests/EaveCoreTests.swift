@@ -695,4 +695,147 @@ final class EaveCoreTests: XCTestCase {
         XCTAssertEqual(sm.ambientIndicators.count, NotchStateMachine.maxAmbientIndicators)
         XCTAssertEqual(sm.ambientIndicators.first?.id, "bridge.5")
     }
+
+    func testProtectedMenuBarRegionGeometry() {
+        // Built-in notched MacBook display: notch sits at x 656..856, auxiliaryTopRight is 856..1512.
+        let primaryScreen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let auxRight = CGRect(x: 856, y: 944, width: 656, height: 38)
+        let primarySep = CGRect(x: 1250, y: 944, width: 10, height: 38)
+        let primaryToggle = CGRect(x: 1330, y: 944, width: 26, height: 38)
+
+        func checkPrimary(_ pt: CGPoint) -> Bool {
+            MenuBarManager.isPointInProtectedMenuBarRegion(
+                point: pt,
+                screenFrame: primaryScreen,
+                menuBarHeight: 38,
+                auxiliaryTopRightArea: auxRight,
+                separatorFrameOnScreen: primarySep,
+                toggleFrameOnScreen: primaryToggle,
+                primarySeparatorFrame: primarySep,
+                primaryToggleFrame: primaryToggle
+            )
+        }
+
+        // Hidden section icons & `•` divider & topmost pixel row are protected.
+        XCTAssertTrue(checkPrimary(CGPoint(x: 1100, y: 960)))
+        XCTAssertTrue(checkPrimary(CGPoint(x: 1100, y: 982)))
+        XCTAssertTrue(checkPrimary(CGPoint(x: 1255, y: 960)))
+        // Resting on Eave's own toggle icon is protected.
+        XCTAssertTrue(checkPrimary(CGPoint(x: 1340, y: 960)))
+        // Visible icons between `•` and Eave, Clock/Control Center, left App menus, and content below bar are NOT protected.
+        XCTAssertFalse(checkPrimary(CGPoint(x: 1295, y: 960)))
+        XCTAssertFalse(checkPrimary(CGPoint(x: 1450, y: 960)))
+        XCTAssertFalse(checkPrimary(CGPoint(x: 120, y: 960)))
+        XCTAssertFalse(checkPrimary(CGPoint(x: 1100, y: 800)))
+
+        // External non-notched monitor on the right: separator X is projected from primary visible width (1356 - 1260 = 96pt).
+        let externalScreen = CGRect(x: 1512, y: -98, width: 1920, height: 1080)
+        let externalToggle = CGRect(x: 3250, y: 952, width: 26, height: 30)
+        // Projected separator maxX = 3276 - 96 = 3180.
+        func checkExternal(_ pt: CGPoint) -> Bool {
+            MenuBarManager.isPointInProtectedMenuBarRegion(
+                point: pt,
+                screenFrame: externalScreen,
+                menuBarHeight: 30,
+                auxiliaryTopRightArea: nil,
+                separatorFrameOnScreen: nil,
+                toggleFrameOnScreen: externalToggle,
+                primarySeparatorFrame: primarySep,
+                primaryToggleFrame: primaryToggle
+            )
+        }
+
+        XCTAssertTrue(checkExternal(CGPoint(x: 3000, y: 965)))
+        XCTAssertTrue(checkExternal(CGPoint(x: 3260, y: 965)))
+        XCTAssertFalse(checkExternal(CGPoint(x: 3215, y: 965)))
+        XCTAssertFalse(checkExternal(CGPoint(x: 3380, y: 965)))
+    }
+
+    func testMenuBarPopoverAndMenuWindowClassification() {
+        let ownPID: pid_t = 999
+        let otherPID: pid_t = 123
+        let screenCGTop: CGFloat = 0
+        let menuBarHeight: CGFloat = 38
+
+        // Dropdown NSMenu (layer 101) below menu bar -> protected.
+        XCTAssertTrue(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.popUpMenuWindow)),
+            bounds: CGRect(x: 1050, y: 38, width: 220, height: 280),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+
+        // Anchored popover / MenuBarExtra panel (layer 3 or statusWindow) directly below menu bar -> protected.
+        XCTAssertTrue(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.floatingWindow)),
+            bounds: CGRect(x: 1020, y: 42, width: 320, height: 420),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+        XCTAssertTrue(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.statusWindow)),
+            bounds: CGRect(x: 1020, y: 40, width: 300, height: 260),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+
+        // Status item icon window strictly inside the menu bar band -> excluded.
+        XCTAssertFalse(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.statusWindow)),
+            bounds: CGRect(x: 1100, y: 0, width: 28, height: 38),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+
+        // Normal document window (layer 0), Dock (layer 20), own windows, and unrelated bottom PiP -> excluded.
+        XCTAssertFalse(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: 0,
+            bounds: CGRect(x: 200, y: 38, width: 900, height: 700),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+        XCTAssertFalse(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.dockWindow)),
+            bounds: CGRect(x: 400, y: 910, width: 700, height: 72),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+        XCTAssertFalse(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.popUpMenuWindow)),
+            bounds: CGRect(x: 1050, y: 38, width: 220, height: 280),
+            ownerPID: ownPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+        XCTAssertFalse(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.floatingWindow)),
+            bounds: CGRect(x: 1100, y: 600, width: 320, height: 180),
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+        XCTAssertFalse(MenuBarManager.isMenuBarPopoverOrMenuWindow(
+            layer: Int(CGWindowLevelForKey(.popUpMenuWindow)),
+            bounds: CGRect(x: 1050, y: 38, width: 220, height: 280),
+            alpha: 0.0,
+            ownerPID: otherPID,
+            ownPID: ownPID,
+            screenCGTop: screenCGTop,
+            menuBarHeight: menuBarHeight
+        ))
+    }
 }
