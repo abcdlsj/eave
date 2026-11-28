@@ -11,6 +11,7 @@ final class AppCoordinator {
     let permissions: PermissionsManager
     let launchAtLogin: LaunchAtLoginService
     let hotKeyManager: HotKeyManager
+    let autoUpdater: AutoUpdater
 
     let menuBarManager: MenuBarManager
     let eventMonitor: MenuBarEventMonitor
@@ -37,6 +38,8 @@ final class AppCoordinator {
 
     private(set) var discoveredItems: [MenuBarItemInfo] = []
     private(set) var isScanningBarItems: Bool = false
+    var selectedSettingsTab: SettingsView.SettingsTab = .general
+    private(set) var isRecordingHotKey: Bool = false
     private var lastScannedSignature: [String] = []
     private var lastMenuBarScanTime: CFAbsoluteTime = 0
 
@@ -46,6 +49,7 @@ final class AppCoordinator {
         self.permissions = PermissionsManager()
         self.launchAtLogin = LaunchAtLoginService()
         self.hotKeyManager = HotKeyManager()
+        self.autoUpdater = AutoUpdater()
 
         let menuBarManager = MenuBarManager(settings: settings)
         self.menuBarManager = menuBarManager
@@ -70,6 +74,7 @@ final class AppCoordinator {
         wireEventMonitor()
         wireHotKeys()
         wireSearch()
+        wireAutoUpdater()
 
         permissions.onAccessibilityChanged = { [weak self] granted in
             self?.handleAccessibilityChanged(granted: granted)
@@ -79,8 +84,17 @@ final class AppCoordinator {
         eventMonitor.start()
         signalHub.start()
         startHiddenDiscoverySync()
+        autoUpdater.startBackgroundChecker()
 
-        if !settings.hasCompletedOnboarding {
+        if let handoff = autoUpdater.takeStartupHandoff(), handoff.settingsWindowOpen {
+            if let tabRaw = handoff.selectedSettingsTab,
+               let tab = SettingsView.SettingsTab(rawValue: tabRaw) {
+                selectedSettingsTab = tab
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.openSettingsWindow()
+            }
+        } else if !settings.hasCompletedOnboarding {
             DispatchQueue.main.async { [weak self] in
                 self?.openOnboardingWindow()
             }
@@ -121,6 +135,7 @@ final class AppCoordinator {
             appReactivationObserver = nil
         }
         permissions.stopPolling()
+        autoUpdater.stop()
         eventMonitor.stop()
         signalHub.stop()
         hotKeyManager.tearDown()
@@ -358,6 +373,12 @@ final class AppCoordinator {
         menuBarManager.onRequestOpenOnboarding = { [weak self] in
             self?.openOnboardingWindow()
         }
+        menuBarManager.updateMenuDescriptorProvider = { [weak self] in
+            self?.autoUpdater.menuDescriptor
+        }
+        menuBarManager.onRequestUpdateAction = { [weak self] in
+            self?.autoUpdater.handlePrimaryUpdateAction()
+        }
         menuBarManager.onToggleHoverChanged = { [weak self] isHovering in
             self?.eventMonitor.handleEaveToggleHover(isHovering: isHovering)
         }
@@ -492,10 +513,27 @@ final class AppCoordinator {
 
     /// Call while a shortcut recorder is capturing keys; pass false to restore the saved shortcuts.
     func setHotKeysSuspended(_ suspended: Bool) {
+        isRecordingHotKey = suspended
         if suspended {
             hotKeyManager.suspendAll()
         } else {
             hotKeyManager.register(settings: settings)
+        }
+    }
+
+    private func wireAutoUpdater() {
+        autoUpdater.isAutoRestartBlocked = { [weak self] in
+            guard let self else { return false }
+            return self.isRecordingHotKey
+                || self.menuBarManager.isContextMenuOpen
+                || self.onboardingWindow?.isVisible == true
+        }
+        autoUpdater.captureHandoffContext = { [weak self] in
+            guard let self else { return (false, nil) }
+            return (
+                settingsWindowOpen: self.settingsWindow?.isVisible == true,
+                selectedSettingsTab: self.selectedSettingsTab.rawValue
+            )
         }
     }
 

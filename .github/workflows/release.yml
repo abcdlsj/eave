@@ -140,16 +140,44 @@ jobs:
             echo "System Settings → Privacy & Security → Accessibility, otherwise it cannot move or"
             echo "click other apps' menu bar items."
           } > NOTES.md
+      - name: Generate signed update manifest (latest.json)
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/generate-update-manifest.py \
+            --app eave \
+            --repo "$GITHUB_REPOSITORY" \
+            --tag "$TAG" \
+            --version "$VERSION" \
+            --bundle-id com.abcdlsj.eave \
+            --bundle-name Eave.app \
+            --min-os 15.0 \
+            --notes-file NOTES.md \
+            --out-dir dist \
+            --asset "darwin-universal=dist/eave_${VERSION}_darwin_universal.zip"
+
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
-        run: >-
-          gh release create "${{ inputs.tag || github.ref_name }}"
-          dist/*.dmg dist/*.zip dist/SHA256SUMS-darwin.txt
-          --repo "$GITHUB_REPOSITORY"
-          --title "Eave ${VERSION}"
-          --notes-file NOTES.md
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ASSETS=(
+            "dist/eave_${VERSION}_darwin_universal.dmg"
+            "dist/eave_${VERSION}_darwin_universal.zip"
+            "dist/SHA256SUMS-darwin.txt"
+          )
+          if [ -f dist/latest.json ] && [ -f dist/latest.json.sig ]; then
+            ASSETS+=("dist/latest.json" "dist/latest.json.sig")
+          fi
+          gh release create "$TAG" "${ASSETS[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Eave ${VERSION}" \
+            --notes-file NOTES.md
 
       # The cask pins the dmg, so it can only be written once that file exists:
       # generate it from the release asset itself instead of a transcription.

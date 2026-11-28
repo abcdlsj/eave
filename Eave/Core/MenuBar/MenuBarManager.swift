@@ -53,6 +53,8 @@ final class MenuBarManager: NSObject {
     var onRequestOpenSearch: (() -> Void)?
     var onRequestOpenSettings: (() -> Void)?
     var onRequestOpenOnboarding: (() -> Void)?
+    var onRequestUpdateAction: (() -> Void)?
+    var updateMenuDescriptorProvider: (() -> AutoUpdater.UpdateMenuDescriptor?)?
     var onExpansionChanged: ((Bool) -> Void)?
     var onToggleHoverChanged: ((Bool) -> Void)?
     var onWillHandleToggleInteraction: (() -> Void)?
@@ -521,6 +523,12 @@ final class MenuBarManager: NSObject {
         menu.addItem(makeItem(title: "Quick Start Guide…", symbol: "sparkles", action: #selector(menuOpenOnboarding)))
         menu.addItem(makeItem(title: "Settings…", symbol: "gearshape", action: #selector(menuOpenSettings), keyEquivalent: ","))
 
+        if let updateDesc = updateMenuDescriptorProvider?() {
+            let updateItem = makeItem(title: updateDesc.title, symbol: updateDesc.symbol, action: #selector(menuTriggerUpdate))
+            updateItem.isEnabled = updateDesc.isEnabled
+            menu.addItem(updateItem)
+        }
+
         menu.addItem(.separator())
 
         menu.addItem(makeItem(title: "Quit Eave", symbol: "power", action: #selector(menuQuit), keyEquivalent: "q"))
@@ -551,6 +559,7 @@ final class MenuBarManager: NSObject {
     @objc private func menuOpenSearch() { onRequestOpenSearch?() }
     @objc private func menuOpenOnboarding() { onRequestOpenOnboarding?() }
     @objc private func menuOpenSettings() { onRequestOpenSettings?() }
+    @objc private func menuTriggerUpdate() { onRequestUpdateAction?() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
     // MARK: - Auto-Rehide

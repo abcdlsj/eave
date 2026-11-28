@@ -26,6 +26,7 @@
 		6167B70F3A763044B0C7E932 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE80FC25F3E2C66E26EC1D8 /* OnboardingView.swift */; };
 		64B41A88679E38675A322605 /* NotchContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549B9761D5E0153204342BE8 /* NotchContainerView.swift */; };
 		66DF7BB162833938A8B03784 /* MenuBarEventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125C51984B34DA1566E3D7FD /* MenuBarEventMonitor.swift */; };
+		8850C7DDDD6C4087F53F0B8D /* AutoUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92812A82DBA46E2DF1F4F35D /* AutoUpdaterTests.swift */; };
 		9054E703F77FF4F1D565C2C1 /* SecondRowBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0286D2F0068C12FE60C8F280 /* SecondRowBarView.swift */; };
 		92A5A91616C1A1784F2B7B39 /* NotchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE533D6DEB6C9E120B0F643E /* NotchModels.swift */; };
 		9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */; };
@@ -38,6 +39,7 @@
 		C540C58BA7546F171EAEC5DD /* NotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F47743A732D02C813720F31 /* NotchPanelController.swift */; };
 		CD57C810A917465183E4F3C7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C554A4BC82A054F7C34D43F7 /* Assets.xcassets */; };
 		D095C2B451D2A55D8CB9D078 /* MenuBarModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A798A5F6CCAB8AA615D646CF /* MenuBarModels.swift */; };
+		DE629070ED3FA72CE195F1A9 /* AutoUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C74D18A0805FB2C5BF6721D /* AutoUpdater.swift */; };
 		F0AFC1D6DF21832C54A61F02 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BFF31D6ECADB9071B56A235 /* MenuBarManager.swift */; };
 		F3774B436A2098EC11F0D528 /* SecondRowBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */; };
 		F78E61EBF22C5941A3A4F39C /* HotKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C82268E7E9A27FB9248A6E /* HotKeyManager.swift */; };
@@ -64,6 +66,7 @@
 		3A7C4FC93C7679EAEE9FEF22 /* SecondRowBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondRowBarController.swift; sourceTree = "<group>"; };
 		3EBDA3A35D04D8F9A2D47592 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		43B15D3ABA1842FF6E48395A /* DockBadgeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockBadgeMonitor.swift; sourceTree = "<group>"; };
+		4C74D18A0805FB2C5BF6721D /* AutoUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoUpdater.swift; sourceTree = "<group>"; };
 		4FE80FC25F3E2C66E26EC1D8 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		549B9761D5E0153204342BE8 /* NotchContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchContainerView.swift; sourceTree = "<group>"; };
 		5CE22ECF8585B626AFBF61B6 /* MenuBarSearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarSearchPanel.swift; sourceTree = "<group>"; };
@@ -74,6 +77,7 @@
 		8D9896D4C9DB2E80CB240563 /* EaveSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EaveSettings.swift; sourceTree = "<group>"; };
 		8F47743A732D02C813720F31 /* NotchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPanelController.swift; sourceTree = "<group>"; };
 		8FB4CF49C7AC84E5B676C2A3 /* AppIconService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconService.swift; sourceTree = "<group>"; };
+		92812A82DBA46E2DF1F4F35D /* AutoUpdaterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoUpdaterTests.swift; sourceTree = "<group>"; };
 		A798A5F6CCAB8AA615D646CF /* MenuBarModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarModels.swift; sourceTree = "<group>"; };
 		A8A3D16434A76D2B76DC175B /* Eave.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Eave.entitlements; sourceTree = "<group>"; };
 		B7D1C554AFBD27B40EB58ED7 /* EaveTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EaveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -139,6 +143,7 @@
 		2CDFB65770BA69091E632C5F /* EaveTests */ = {
 			isa = PBXGroup;
 			children = (
+				92812A82DBA46E2DF1F4F35D /* AutoUpdaterTests.swift */,
 				1589FF8D385A8011AB08A5FA /* EaveCoreTests.swift */,
 			);
 			path = EaveTests;
@@ -171,6 +176,7 @@
 				26A2333F5F54657EB08DB067 /* Notch */,
 				E4DDAA5649185DD2BB808DD4 /* Signals */,
 				2971EB738200D9A587A92935 /* System */,
+				C5ED82F1B5DBE500765744DE /* Update */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -230,6 +236,14 @@
 				6E2CD31744473873BC6B5CCE /* Shared */,
 			);
 			path = UI;
+			sourceTree = "<group>";
+		};
+		C5ED82F1B5DBE500765744DE /* Update */ = {
+			isa = PBXGroup;
+			children = (
+				4C74D18A0805FB2C5BF6721D /* AutoUpdater.swift */,
+			);
+			path = Update;
 			sourceTree = "<group>";
 		};
 		C74E22D0A2EA45F4CA9A2919 /* MenuBar */ = {
@@ -384,6 +398,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8850C7DDDD6C4087F53F0B8D /* AutoUpdaterTests.swift in Sources */,
 				024BB1B6C0EB40B162D3813A /* EaveCoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -394,6 +409,7 @@
 			files = (
 				3E955249D06DE4A9F0E08357 /* AppCoordinator.swift in Sources */,
 				9BFC462D393C40286D9BADF8 /* AppIconService.swift in Sources */,
+				DE629070ED3FA72CE195F1A9 /* AutoUpdater.swift in Sources */,
 				A59B7A8A2DA83AB4D316D741 /* DockBadgeMonitor.swift in Sources */,
 				9D189EB97BA75664D8ADC445 /* EaveApp.swift in Sources */,
 				AD127BBAFEA15634C14FEDC1 /* EaveDesignSystem.swift in Sources */,
@@ -504,7 +520,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.3.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -588,7 +604,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.3.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

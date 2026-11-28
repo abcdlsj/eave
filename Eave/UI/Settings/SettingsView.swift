@@ -7,11 +7,14 @@ struct SettingsView: View {
     @Environment(\.eaveHairline) private var hairline
     let coordinator: AppCoordinator
 
-    @State private var selectedTab: SettingsTab = .general
     @State private var hoveredTab: SettingsTab?
     @State private var isStatusHovered = false
     @Namespace private var sidebarNamespace
     @Environment(\.colorScheme) private var systemColorScheme
+
+    private var selectedTab: SettingsTab {
+        coordinator.selectedSettingsTab
+    }
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -168,7 +171,7 @@ struct SettingsView: View {
         return Button {
             if selectedTab != tab {
                 withAnimation(EaveMotion.tabSwitch) {
-                    selectedTab = tab
+                    coordinator.selectedSettingsTab = tab
                 }
             }
         } label: {
@@ -427,7 +430,8 @@ private struct GeneralSettingsTab: View {
     }
 
     private var aboutCard: some View {
-        EaveSettingsCard("About") {
+        let updateStatus = coordinator.autoUpdater.status
+        return EaveSettingsCard("About") {
             HStack(spacing: 12) {
                 if let appIcon = NSApp.applicationIconImage {
                     Image(nsImage: appIcon)
@@ -437,36 +441,165 @@ private struct GeneralSettingsTab: View {
                         .accessibilityHidden(true)
                 }
 
-                VStack(alignment: .leading, spacing: 1.5) {
-                    Text("Eave")
-                        .font(.system(size: 13, weight: .medium))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 7) {
+                        Text("Eave")
+                            .font(.system(size: 13, weight: .medium))
+                        UpdatePill(
+                            status: updateStatus,
+                            showUpToDate: coordinator.autoUpdater.upToDateFeedbackVisible
+                        ) {
+                            coordinator.autoUpdater.handlePrimaryUpdateAction()
+                        }
+                    }
                     Text("Version \(SettingsView.appVersion)")
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
-                .accessibilityElement(children: .combine)
 
                 Spacer(minLength: 8)
 
-                Button {
-                    if let url = URL(string: "https://github.com/abcdlsj/eave") {
-                        openURL(url)
+                HStack(spacing: 6) {
+                    updateActionButton(for: updateStatus)
+
+                    Button {
+                        if let url = URL(string: "https://github.com/abcdlsj/eave") {
+                            openURL(url)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("GitHub")
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("GitHub")
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
+                    .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                    .help("Open github.com/abcdlsj/eave")
+                    .accessibilityLabel("Open Eave on GitHub")
                 }
-                .buttonStyle(EaveSecondaryButtonStyle(compact: true))
-                .help("Open github.com/abcdlsj/eave")
-                .accessibilityLabel("Open Eave on GitHub")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
+
+            if updateStatus.phase == .error, let err = updateStatus.error {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.orange)
+                        .padding(.top, 1)
+                    Text(err)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func updateActionButton(for updateStatus: AutoUpdater.UpdateStatus) -> some View {
+        switch updateStatus.phase {
+        case .checking:
+            Button("Checking…") {}
+                .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                .disabled(true)
+        case .available:
+            let label = updateStatus.canApply ? "Update" : "Download"
+            Button(label) {
+                coordinator.autoUpdater.handlePrimaryUpdateAction()
+            }
+            .buttonStyle(EaveProminentButtonStyle())
+        case .downloading:
+            Button("Downloading \(updateStatus.progress)%") {}
+                .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                .disabled(true)
+        case .verifying:
+            Button("Verifying…") {}
+                .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                .disabled(true)
+        case .readyToRestart:
+            Button("Restart to v\(updateStatus.latest ?? "")") {
+                coordinator.autoUpdater.commitRestart()
+            }
+            .buttonStyle(EaveProminentButtonStyle())
+        case .installing:
+            Button("Installing…") {}
+                .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+                .disabled(true)
+        case .idle, .error:
+            Button("Check for Updates") {
+                coordinator.autoUpdater.checkForUpdatesManually()
+            }
+            .buttonStyle(EaveSecondaryButtonStyle(compact: true))
+        }
+    }
+}
+
+private struct UpdatePill: View {
+    let status: AutoUpdater.UpdateStatus
+    let showUpToDate: Bool
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        switch status.phase {
+        case .available:
+            if let latest = status.latest {
+                Button(action: action) {
+                    HStack(spacing: 4.5) {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 5.5, height: 5.5)
+                        Text("v\(latest) available")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.primary.opacity(0.84))
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(EavePalette.pillFill(colorScheme)))
+                }
+                .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.96))
+            }
+        case .downloading:
+            pillLabel(dot: .accentColor, text: "Downloading \(status.progress)%")
+        case .verifying:
+            pillLabel(dot: .accentColor, text: "Verifying…")
+        case .readyToRestart:
+            if let latest = status.latest {
+                Button(action: action) {
+                    pillLabel(dot: .green, text: "v\(latest) ready")
+                }
+                .buttonStyle(EaveTactileButtonStyle(pressedScale: 0.96))
+            }
+        case .installing:
+            pillLabel(dot: .green, text: "Installing…")
+        case .error:
+            pillLabel(dot: .orange, text: "Update failed")
+        case .idle:
+            if showUpToDate {
+                pillLabel(dot: .green, text: "Up to date")
+            }
+        case .checking:
+            EmptyView()
+        }
+    }
+
+    private func pillLabel(dot: Color, text: String) -> some View {
+        HStack(spacing: 4.5) {
+            Circle()
+                .fill(dot)
+                .frame(width: 5.5, height: 5.5)
+            Text(text)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(EavePalette.pillFill(colorScheme)))
     }
 }
 
